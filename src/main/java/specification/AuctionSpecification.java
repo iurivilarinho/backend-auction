@@ -5,8 +5,8 @@ import java.util.List;
 
 import org.springframework.data.jpa.domain.Specification;
 
-import com.br.leilao.enums.AuctionStatus;
-import com.br.leilao.models.Auction;
+import com.br.auction.enums.AuctionStatus;
+import com.br.auction.models.Auction;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Expression;
