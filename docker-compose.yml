@@ -1,0 +1,22 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      SPRING_PROFILES_ACTIVE: prod
+
+      SERVER_PORT: 8087
+      SERVER_SSL_ENABLED: "true"
+      SERVER_SSL_KEY_STORE: "file:/etc/ssl/private/keystore.jks"
+      SERVER_SSL_KEY_STORE_TYPE: "JKS"
+      SERVER_SSL_KEY_STORE_PASSWORD: "123456"
+      SERVER_SSL_KEY_ALIAS: "springboot"
+    volumes:
+      - /etc/ssl/private/keystore.jks:/etc/ssl/private/keystore.jks:ro
+    restart: unless-stopped
