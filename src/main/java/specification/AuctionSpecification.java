@@ -30,6 +30,20 @@ public class AuctionSpecification {
 				.in(status.stream().map(AuctionStatus::getDescription).toList());
 	}
 
+	public static Specification<Auction> providerCodeEquals(String providerCode) {
+		if (providerCode == null || providerCode.isBlank()) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("providerCode"), providerCode.trim());
+	}
+
+	public static Specification<Auction> stateCodeEquals(String stateCode) {
+		if (stateCode == null || stateCode.isBlank()) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("stateCode"), stateCode.trim());
+	}
+
 	public static Specification<Auction> searchAllFields(String searchTerm, EntityManager entityManager) {
 		return (root, query, criteriaBuilder) -> {
 			List<Predicate> predicates = new ArrayList<>();

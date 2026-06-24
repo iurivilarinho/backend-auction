@@ -24,7 +24,7 @@ public class VehicleFipeCache {
     @Schema(description = "Modelo do veículo")
     private String model;
 
-    @Column
+    @Column(name = "vehicleYear")
     @Schema(description = "Ano do veículo")
     private String year;
 

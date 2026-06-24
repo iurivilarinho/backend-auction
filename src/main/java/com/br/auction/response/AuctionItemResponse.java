@@ -2,26 +2,30 @@ package com.br.auction.response;
 
 import java.math.BigDecimal;
 
+import com.br.auction.enums.LotType;
 import com.br.auction.models.AuctionItem;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "Resposta de item de leilão")
+@Schema(description = "Resposta de item de leilao")
 public class AuctionItemResponse {
 
 	@Schema(description = "Identificador do item")
 	private Long id;
 
-	@Schema(description = "Identificador do lote no portal do DETRAN")
+	@Schema(description = "Identificador do lote no portal do provedor")
 	private String lotId;
 
-	@Schema(description = "Número do lote")
+	@Schema(description = "Numero do lote")
 	private String lotNumber;
 
-	@Schema(description = "Tipo do lote (CONSERVADO ou SUCATA)")
+	@Schema(description = "Tipo textual do lote")
 	private String lotType;
 
-	@Schema(description = "Descrição do veículo")
+	@Schema(description = "Tipo normalizado do lote")
+	private LotType normalizedLotType;
+
+	@Schema(description = "Descricao do veiculo")
 	private String vehicleDescription;
 
 	@Schema(description = "Valor atual do lance")
@@ -30,7 +34,7 @@ public class AuctionItemResponse {
 	@Schema(description = "Valor da tabela FIPE")
 	private BigDecimal fipeValue;
 
-	@Schema(description = "Leilão ao qual o veículo pertence")
+	@Schema(description = "Leilao ao qual o veiculo pertence")
 	private AuctionListResponse auction;
 
 	public AuctionItemResponse(AuctionItem item) {
@@ -38,6 +42,7 @@ public class AuctionItemResponse {
 		this.lotId = item.getLotId();
 		this.lotNumber = item.getLotNumber();
 		this.lotType = item.getLotType();
+		this.normalizedLotType = LotType.fromSource(item.getLotType());
 		this.vehicleDescription = item.getVehicleDescription();
 		this.currentBidValue = item.getCurrentBidValue();
 		this.fipeValue = item.getFipeValue();
@@ -60,6 +65,10 @@ public class AuctionItemResponse {
 		return lotType;
 	}
 
+	public LotType getNormalizedLotType() {
+		return normalizedLotType;
+	}
+
 	public String getVehicleDescription() {
 		return vehicleDescription;
 	}
@@ -75,5 +84,4 @@ public class AuctionItemResponse {
 	public AuctionListResponse getAuction() {
 		return auction;
 	}
-
 }

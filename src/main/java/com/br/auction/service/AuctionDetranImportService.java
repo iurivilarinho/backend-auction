@@ -2,309 +2,204 @@ package com.br.auction.service;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.time.Duration;
-import java.util.ArrayList;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.br.auction.enums.AuctionStatus;
+import com.br.auction.enums.AuctionProvider;
 import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.repository.AuctionRepository;
+import com.br.auction.response.AuctionJsonResponse;
 import com.br.auction.response.AuctionListJsonResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
-import specification.AuctionSpecification;
+import com.br.auction.response.AuctionSyncResultResponse;
+import com.br.auction.response.LotResponse;
 
 @Service
 public class AuctionDetranImportService {
 
-	private static final String URL_LIST = "https://leilao.detran.mg.gov.br/";
-	private static final String URL_LOTS = "https://leilao.detran.mg.gov.br/lotes/lista-lotes/%s/%s?limit=2000";
+	private static final DateTimeFormatter BRAZIL_DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
 	private final AuctionRepository auctionRepository;
 	private final AuctionItemRepository auctionItemRepository;
+	private final AuctionDetranService detranService;
 	private final FipeService fipeService;
-	private final ObjectMapper objectMapper = new ObjectMapper();
+	private final boolean schedulerEnabled;
+	private final boolean fipeImportEnabled;
 
 	public AuctionDetranImportService(AuctionRepository auctionRepository, AuctionItemRepository auctionItemRepository,
-			FipeService fipeService) {
-
+			AuctionDetranService detranService, FipeService fipeService,
+			@Value("${auction.scheduler.enabled:false}") boolean schedulerEnabled,
+			@Value("${auction.import.fipe.enabled:false}") boolean fipeImportEnabled) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
+		this.detranService = detranService;
 		this.fipeService = fipeService;
+		this.schedulerEnabled = schedulerEnabled;
+		this.fipeImportEnabled = fipeImportEnabled;
 	}
 
 	@Transactional
-	@Scheduled(fixedDelay = 600000)
+	@Scheduled(fixedDelayString = "600000", initialDelayString = "600000")
 	public void importAllAuctions() {
+		if (!schedulerEnabled) {
+			return;
+		}
+		syncAuctions(AuctionProvider.defaultProvider(), new AuctionSourceFilter());
+	}
+
+	@Transactional
+	public AuctionSyncResultResponse syncAuctions(AuctionProvider provider, AuctionSourceFilter filter) {
+		LocalDateTime startedAt = LocalDateTime.now();
+		int importedAuctions = 0;
+		int updatedAuctions = 0;
+		int skippedAuctions = 0;
+		int importedItems = 0;
+		int skippedItems = 0;
 
 		try {
+			List<AuctionListJsonResponse> sourceAuctions = detranService.fetchAuctions(provider, filter);
 
-			List<AuctionListJsonResponse> auctions = fetchAuctions();
-
-			for (AuctionListJsonResponse auctionResponse : auctions) {
-
-				if (auctionRepository.existsByDetranAuctionId(auctionResponse.getAuctionId())) {
+			for (AuctionListJsonResponse sourceAuction : sourceAuctions) {
+				if (sourceAuction.getAuctionId() == null || sourceAuction.getAuctionId().isBlank()) {
+					skippedAuctions++;
 					continue;
 				}
 
-				Auction auction = new Auction();
+				Optional<Auction> existingAuction = auctionRepository.findByProviderCodeAndDetranAuctionId(
+						provider.getCode(), sourceAuction.getAuctionId());
+				Auction auction = existingAuction.orElseGet(Auction::new);
+				boolean isNewAuction = existingAuction.isEmpty();
 
-				auction.setAuctionNoticeNumber(auctionResponse.getAuctionNoticeNumber());
-				auction.setCity(auctionResponse.getCity());
-				auction.setAuctioneer(auctionResponse.getAuctioneer());
-				auction.setStatus(auctionResponse.getStatus());
-				auction.setDetranAuctionId(auctionResponse.getAuctionId());
-				auction.setAuctionYear(auctionResponse.getAuctionYear());
+				applyAuctionSource(auction, sourceAuction, provider);
+				Auction savedAuction = auctionRepository.save(auction);
 
-				auctionRepository.save(auction);
+				if (isNewAuction) {
+					importedAuctions++;
+				} else {
+					updatedAuctions++;
+				}
 
-				importAuctionLots(auction);
+				AuctionJsonResponse lots = detranService.fetchAuctionLots(provider, sourceAuction.getAuctionId(),
+						sourceAuction.getAuctionYear());
+				ImportItemCounter counter = importAuctionLots(savedAuction, lots.getLots());
+				importedItems += counter.getImportedItems();
+				skippedItems += counter.getSkippedItems();
 			}
 
-		} catch (Exception e) {
-			System.err.println("Erro ao importar leilões: " + e.getMessage());
+			return new AuctionSyncResultResponse(provider, sourceAuctions.size(), importedAuctions, updatedAuctions,
+					skippedAuctions, importedItems, skippedItems, startedAt, LocalDateTime.now());
+		} catch (IOException ex) {
+			throw new IllegalStateException("Nao foi possivel sincronizar leiloes do provedor " + provider.getCode(), ex);
 		}
 	}
 
-	private void importAuctionLots(Auction auction) {
-
-		try {
-
-			String url = String.format(URL_LOTS, auction.getDetranAuctionId(), auction.getAuctionYear());
-
-			Document document = Jsoup.connect(url).userAgent("Mozilla/5.0")
-					.timeout((int) Duration.ofSeconds(30).toMillis()).get();
-
-			Elements lotCards = document.select(".card.listaLotes");
-
-			for (Element card : lotCards) {
-
-				String lotId = card.attr("id");
-
-				if (auctionItemRepository.existsByLotId(lotId)) {
-					continue;
-				}
-
-				AuctionItem item = new AuctionItem();
-
-				item.setAuction(auction);
-				item.setLotId(lotId);
-
-				Element lotSpan = card.selectFirst("span:contains(Lote)");
-				if (lotSpan != null) {
-					item.setLotNumber(lotSpan.text());
-				}
-
-				String lotType = card.select("span:contains(CONSERVADO), span:contains(SUCATA)").text();
-				item.setLotType(lotType);
-
-				Element desc = card.select("b:matchesOwn(^[A-Z])").last();
-				if (desc != null) {
-					item.setVehicleDescription(desc.text());
-				}
-
-				String bid = card.select("[id^=valor_atual_lote]").text().replace("R$", "").replace(".", "")
-						.replace(",", ".").trim();
-
-				if (!bid.isEmpty()) {
-					item.setCurrentBidValue(new BigDecimal(bid));
-				}
-
-				BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription());
-				item.setFipeValue(fipeValue);
-
-				auctionItemRepository.save(item);
-			}
-
-		} catch (Exception e) {
-			System.err.println(
-					"Erro ao importar lotes do leilão " + auction.getDetranAuctionId() + ": " + e.getMessage());
+	private ImportItemCounter importAuctionLots(Auction auction, List<LotResponse> lots) {
+		if (lots == null || lots.isEmpty()) {
+			return new ImportItemCounter(0, 0);
 		}
-	}
 
-	public List<AuctionListJsonResponse> fetchAuctions() throws IOException {
+		int importedItems = 0;
+		int skippedItems = 0;
 
-		Document document = Jsoup.connect(URL_LIST).userAgent("Mozilla/5.0").timeout(30000).get();
-
-		List<AuctionListJsonResponse> auctions = new ArrayList<>();
-
-		Elements cards = document.select(".col-md-3 .card");
-
-		for (Element card : cards) {
-
-			Element link = card.selectFirst("a[href*=/lotes/lista-lotes/]");
-
-			if (link == null) {
+		for (LotResponse lot : lots) {
+			if (lot.getLotId() == null || lot.getLotId().isBlank()) {
+				skippedItems++;
 				continue;
 			}
 
-			AuctionListJsonResponse auction = new AuctionListJsonResponse();
+			Optional<AuctionItem> existingItem = auctionItemRepository.findByAuctionIdAndLotId(auction.getId(),
+					lot.getLotId());
+			AuctionItem item = existingItem.orElseGet(AuctionItem::new);
 
-			String notice = card.select(".card-title").text();
-			auction.setAuctionNoticeNumber(notice.replace("Edital de Leilão", "").trim());
+			item.setAuction(auction);
+			item.setLotId(lot.getLotId());
+			item.setLotNumber(lot.getLotNumber());
+			item.setLotType(lot.getLotType());
+			item.setVehicleDescription(lot.getVehicleDescription());
+			item.setCurrentBidValue(parseMoney(lot.getCurrentBidValue()));
 
-			auction.setCity(card.select(".capa-municipio").text());
-
-			Element auctioneer = card.select(".row b").first();
-			if (auctioneer != null) {
-				auction.setAuctioneer(auctioneer.text());
+			if (fipeImportEnabled && item.getVehicleDescription() != null && !item.getVehicleDescription().isBlank()) {
+				item.setFipeValue(fipeService.getFipeValue(item.getVehicleDescription()));
 			}
 
-			auction.setStatus(card.select(".text-primary, .text-success, .text-danger").text());
-
-			String closingDate = card.select("div:contains(Encerramento)").text().replace("Encerramento:", "").trim();
-
-			auction.setClosingDate(closingDate);
-
-			String href = link.attr("href");
-			String[] parts = href.split("/");
-
-			auction.setAuctionId(parts[3]);
-			auction.setAuctionYear(parts[4]);
-
-			auctions.add(auction);
+			auctionItemRepository.save(item);
+			if (existingItem.isEmpty()) {
+				importedItems++;
+			} else {
+				skippedItems++;
+			}
 		}
 
-		return auctions;
+		return new ImportItemCounter(importedItems, skippedItems);
 	}
 
-	@Scheduled(fixedDelay = 180000)
-	public void updateValuesAuctionItems() {
+	private void applyAuctionSource(Auction auction, AuctionListJsonResponse sourceAuction, AuctionProvider provider) {
+		auction.setAuctionNoticeNumber(sourceAuction.getAuctionNoticeNumber());
+		auction.setCity(sourceAuction.getCity());
+		auction.setAuctioneer(sourceAuction.getAuctioneer());
+		auction.setStatus(sourceAuction.getStatus());
+		auction.setClosingDate(parseClosingDate(sourceAuction.getClosingDate()));
+		auction.setDetranAuctionId(sourceAuction.getAuctionId());
+		auction.setAuctionYear(sourceAuction.getAuctionYear());
+		auction.setSourceUrl(sourceAuction.getSourceUrl());
+		auction.setProviderCode(provider.getCode());
+		auction.setProviderName(provider.getName());
+		auction.setStateCode(provider.getStateCode());
+		auction.setStateName(provider.getStateName());
+	}
 
-		System.err.println("Atualizando valores de Items em andamento....");
+	private LocalDateTime parseClosingDate(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
 
 		try {
-
-			List<AuctionItem> items = auctionItemRepository.findAll();
-
-			if (items.isEmpty()) {
-				return;
-			}
-
-			int batchSize = 100;
-
-			for (int i = 0; i < items.size(); i += batchSize) {
-
-				int end = Math.min(i + batchSize, items.size());
-
-				List<AuctionItem> batch = items.subList(i, end);
-
-				processBatch(batch);
-			}
-
-		} catch (Exception e) {
-
-			System.err.println("Erro ao atualizar valores dos lotes: " + e.getMessage());
-
+			return LocalDateTime.parse(value.trim(), BRAZIL_DATE_TIME);
+		} catch (RuntimeException ex) {
+			return null;
 		}
 	}
 
-	private void processBatch(List<AuctionItem> batch) {
+	private BigDecimal parseMoney(String value) {
+		if (value == null || value.isBlank()) {
+			return BigDecimal.ZERO;
+		}
+
+		String normalized = value.replace("R$", "").replace(".", "").replace(",", ".").trim();
+		if (normalized.isBlank()) {
+			return BigDecimal.ZERO;
+		}
 
 		try {
-
-			StringBuilder urlBuilder = new StringBuilder(
-					"https://leilao.detran.mg.gov.br/PDO/updateCountdown.php?user=");
-
-			for (AuctionItem item : batch) {
-				urlBuilder.append("&data[]=").append(item.getLotId());
-			}
-
-			String url = urlBuilder.toString();
-
-			String response = Jsoup.connect(url).ignoreContentType(true).userAgent("Mozilla/5.0").timeout(30000)
-					.execute().body();
-
-			Map<String, Object> json = objectMapper.readValue(response, Map.class);
-
-			for (AuctionItem item : batch) {
-
-				Object lotObj = json.get(item.getLotId());
-
-				if (lotObj == null) {
-					continue;
-				}
-
-				Map<String, Object> lotData = (Map<String, Object>) lotObj;
-
-				Object valueObj = lotData.get("valor");
-
-				if (valueObj == null) {
-					continue;
-				}
-
-				String value = valueObj.toString();
-
-				BigDecimal newValue = new BigDecimal(value.replace("R$", "").replace(".", "").replace(",", ".").trim());
-
-				item.setCurrentBidValue(newValue);
-			}
-
-			auctionItemRepository.saveAll(batch);
-
-		} catch (Exception e) {
-
-			System.err.println("Erro ao atualizar batch: " + e.getMessage());
-
+			return new BigDecimal(normalized);
+		} catch (NumberFormatException ex) {
+			return BigDecimal.ZERO;
 		}
 	}
 
-	@Scheduled(cron = "0 0 8 * * *")
-	@Transactional
-	public void updateAuctionStatus() {
+	private static class ImportItemCounter {
+		private final int importedItems;
+		private final int skippedItems;
 
-		System.out.println("Atualizando status dos leilões...");
+		ImportItemCounter(int importedItems, int skippedItems) {
+			this.importedItems = importedItems;
+			this.skippedItems = skippedItems;
+		}
 
-		try {
+		int getImportedItems() {
+			return importedItems;
+		}
 
-			List<Auction> auctions = auctionRepository.findAll(
-					AuctionSpecification.statusEquals(List.of(AuctionStatus.EM_ANDAMENTO, AuctionStatus.PUBLICADO)));
-
-			if (auctions.isEmpty()) {
-				return;
-			}
-
-			List<AuctionListJsonResponse> detranAuctions = fetchAuctions();
-
-			for (Auction auction : auctions) {
-
-				for (AuctionListJsonResponse detran : detranAuctions) {
-
-					if (!auction.getDetranAuctionId().equals(detran.getAuctionId())) {
-						continue;
-					}
-
-					String newStatus = detran.getStatus();
-
-					if (!auction.getStatus().equals(newStatus)) {
-
-						System.out.println(
-								"Atualizando status leilão " + auction.getDetranAuctionId() + " -> " + newStatus);
-
-						auction.setStatus(newStatus);
-
-						auctionRepository.save(auction);
-					}
-
-					break;
-				}
-			}
-
-		} catch (Exception e) {
-
-			System.err.println("Erro ao atualizar status dos leilões: " + e.getMessage());
-
+		int getSkippedItems() {
+			return skippedItems;
 		}
 	}
 }

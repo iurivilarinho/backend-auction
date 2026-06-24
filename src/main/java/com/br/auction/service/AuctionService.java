@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.br.auction.enums.AuctionProvider;
 import com.br.auction.enums.AuctionStatus;
 import com.br.auction.enums.LotType;
 import com.br.auction.models.Auction;
@@ -27,30 +28,40 @@ public class AuctionService {
 
 	public AuctionService(AuctionRepository auctionRepository, AuctionItemRepository auctionItemRepository,
 			EntityManager entityManager) {
-
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
 		this.entityManager = entityManager;
 	}
 
 	@Transactional(readOnly = true)
-	public Page<Auction> findAll(List<AuctionStatus> status, String search, Pageable page) {
+	public Page<Auction> findAll(List<AuctionStatus> status, String search, String providerCode, String stateCode,
+			Pageable page) {
+		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
+		String resolvedStateCode = stateCode == null || stateCode.isBlank() ? provider.getStateCode() : stateCode;
+
 		return auctionRepository.findAll(AuctionSpecification.searchAllFields(search, entityManager)
-				.and(AuctionSpecification.statusEquals(status)), page);
+				.and(AuctionSpecification.statusEquals(status))
+				.and(AuctionSpecification.providerCodeEquals(provider.getCode()))
+				.and(AuctionSpecification.stateCodeEquals(resolvedStateCode)), page);
 	}
 
 	@Transactional(readOnly = true)
 	public Auction findById(Long auctionId) {
 		return auctionRepository.findById(auctionId)
-				.orElseThrow(() -> new EntityNotFoundException("Leilão não encontrado para ID: " + auctionId));
+				.orElseThrow(() -> new EntityNotFoundException("Leilao nao encontrado para ID: " + auctionId));
 	}
 
 	@Transactional(readOnly = true)
-	public Page<AuctionItem> findAllItems(List<AuctionStatus> status, List<LotType> type, String search,
-			Pageable page) {
-		return auctionItemRepository.findAll(AuctionItemSpecification.searchAllFields(search, entityManager)
-				.and(AuctionItemSpecification.typeEquals(type))
-				.and(AuctionItemSpecification.auctionStatusEquals(status)), page);
-	}
+	public Page<AuctionItem> findAllItems(Long auctionId, List<AuctionStatus> status, List<LotType> type,
+			String search, String providerCode, String stateCode, Pageable page) {
+		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
+		String resolvedStateCode = stateCode == null || stateCode.isBlank() ? provider.getStateCode() : stateCode;
 
+		return auctionItemRepository.findAll(AuctionItemSpecification.searchAllFields(search, entityManager)
+				.and(AuctionItemSpecification.auctionIdEquals(auctionId))
+				.and(AuctionItemSpecification.typeEquals(type))
+				.and(AuctionItemSpecification.auctionStatusEquals(status))
+				.and(AuctionItemSpecification.providerCodeEquals(provider.getCode()))
+				.and(AuctionItemSpecification.stateCodeEquals(resolvedStateCode)), page);
+	}
 }

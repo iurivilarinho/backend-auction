@@ -3,11 +3,19 @@ package com.br.auction.models;
 import java.math.BigDecimal;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.ForeignKey;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "tbAuctionItem")
-@Schema(description = "Entidade que representa um veículo dentro de um leilão")
+@Schema(description = "Entidade que representa um veiculo dentro de um leilao")
 public class AuctionItem {
 
 	@Id
@@ -16,19 +24,19 @@ public class AuctionItem {
 	private Long id;
 
 	@Column
-	@Schema(description = "Identificador do lote no portal do DETRAN")
+	@Schema(description = "Identificador do lote no portal do provedor")
 	private String lotId;
 
 	@Column
-	@Schema(description = "Número do lote")
+	@Schema(description = "Numero do lote")
 	private String lotNumber;
 
 	@Column
-	@Schema(description = "Tipo do lote (CONSERVADO ou SUCATA)")
+	@Schema(description = "Tipo do lote")
 	private String lotType;
 
 	@Column
-	@Schema(description = "Descrição do veículo")
+	@Schema(description = "Descricao do veiculo")
 	private String vehicleDescription;
 
 	@Column(precision = 15, scale = 2)
@@ -41,7 +49,7 @@ public class AuctionItem {
 
 	@ManyToOne
 	@JoinColumn(name = "fk_Id_Auction", foreignKey = @ForeignKey(name = "FK_FROM_TBAUCTIONITEM_FOR_TBAUCTION"))
-	@Schema(description = "Leilão ao qual o veículo pertence")
+	@Schema(description = "Leilao ao qual o veiculo pertence")
 	private Auction auction;
 
 	public Long getId() {

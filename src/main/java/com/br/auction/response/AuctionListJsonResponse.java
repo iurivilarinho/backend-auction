@@ -2,19 +2,19 @@ package com.br.auction.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
-@Schema(description = "Leilão disponível no portal do DETRAN")
+@Schema(description = "Leilao disponivel no portal do provedor")
 public class AuctionListJsonResponse {
 
-	@Schema(description = "Número do edital do leilão")
+	@Schema(description = "Numero do edital do leilao")
 	private String auctionNoticeNumber;
 
-	@Schema(description = "Cidade do leilão")
+	@Schema(description = "Cidade do leilao")
 	private String city;
 
-	@Schema(description = "Nome do pátio ou leiloeiro")
+	@Schema(description = "Nome do patio ou leiloeiro")
 	private String auctioneer;
 
-	@Schema(description = "Status do leilão")
+	@Schema(description = "Status do leilao")
 	private String status;
 
 	@Schema(description = "Data de encerramento")
@@ -23,8 +23,11 @@ public class AuctionListJsonResponse {
 	@Schema(description = "Id interno usado para buscar os lotes")
 	private String auctionId;
 
-	@Schema(description = "Ano do leilão")
+	@Schema(description = "Ano do leilao")
 	private String auctionYear;
+
+	@Schema(description = "URL publica do leilao no provedor")
+	private String sourceUrl;
 
 	public AuctionListJsonResponse() {
 	}
@@ -83,5 +86,13 @@ public class AuctionListJsonResponse {
 
 	public void setAuctionYear(String auctionYear) {
 		this.auctionYear = auctionYear;
+	}
+
+	public String getSourceUrl() {
+		return sourceUrl;
+	}
+
+	public void setSourceUrl(String sourceUrl) {
+		this.sourceUrl = sourceUrl;
 	}
 }

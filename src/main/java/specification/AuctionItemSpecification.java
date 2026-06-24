@@ -40,6 +40,29 @@ public class AuctionItemSpecification {
 				.in(status.stream().map(AuctionStatus::getDescription).toList());
 	}
 
+	public static Specification<AuctionItem> auctionIdEquals(Long auctionId) {
+		if (auctionId == null) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("auction").get("id"), auctionId);
+	}
+
+	public static Specification<AuctionItem> providerCodeEquals(String providerCode) {
+		if (providerCode == null || providerCode.isBlank()) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("auction").get("providerCode"),
+				providerCode.trim());
+	}
+
+	public static Specification<AuctionItem> stateCodeEquals(String stateCode) {
+		if (stateCode == null || stateCode.isBlank()) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("auction").get("stateCode"),
+				stateCode.trim());
+	}
+
 	public static Specification<AuctionItem> searchAllFields(String searchTerm, EntityManager entityManager) {
 		return (root, query, criteriaBuilder) -> {
 			List<Predicate> predicates = new ArrayList<>();
