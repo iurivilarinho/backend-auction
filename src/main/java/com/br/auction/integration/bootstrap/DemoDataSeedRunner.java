@@ -4,7 +4,10 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -87,14 +90,13 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 		}
 
 		AuctionProvider provider = AuctionProvider.defaultProvider();
-		List<Photo> carPool = downloadPool("car", 8);
-		List<Photo> motoPool = downloadPool("motorcycle", 3);
+		Map<String, List<Photo>> photosByVehicle = buildPhotoMap();
 
 		for (int i = 1; i <= TOTAL_AUCTIONS; i++) {
 			Auction auction = newAuction(provider, i);
 			int items = 2 + (i % 3);
 			for (int j = 0; j < items; j++) {
-				addItem(auction, i, j, carPool, motoPool);
+				addItem(auction, i, j, photosByVehicle);
 			}
 			auctionRepository.save(auction);
 		}
@@ -120,7 +122,7 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 		return auction;
 	}
 
-	private void addItem(Auction auction, int auctionIndex, int itemIndex, List<Photo> carPool, List<Photo> motoPool) {
+	private void addItem(Auction auction, int auctionIndex, int itemIndex, Map<String, List<Photo>> photosByVehicle) {
 		int seed = auctionIndex * 7 + itemIndex;
 		boolean moto = seed % 5 == 0;
 		Vehicle vehicle = moto ? MOTOS[seed % MOTOS.length] : CARS[seed % CARS.length];
@@ -134,33 +136,52 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 		item.setCurrentBidValue(new BigDecimal(vehicle.bid()));
 		item.setFipeValue(new BigDecimal(vehicle.fipe()));
 
-		List<Photo> pool = moto ? motoPool : carPool;
-		if (pool.isEmpty()) {
+		List<Photo> photos = photosByVehicle.getOrDefault(vehicle.description(), List.of());
+		if (photos.isEmpty()) {
 			for (String angle : List.of("Frente", "Lateral")) {
 				item.addImage(svgImage(vehicle.description(), angle));
 			}
 		} else {
-			for (int p = 0; p < PHOTOS_PER_ITEM; p++) {
-				Photo photo = pool.get((seed + p) % pool.size());
+			for (Photo photo : photos) {
 				item.addImage(new AuctionItemImage(null, photo.contentType(), photo.data()));
 			}
 		}
 		auction.getItems().add(item);
 	}
 
-	private List<Photo> downloadPool(String tag, int size) {
-		List<Photo> pool = new ArrayList<>();
+	/**
+	 * Baixa fotos reais especificas por modelo (ex.: "fiat,uno,car"), uma vez, e reaproveita
+	 * entre todos os lotes do mesmo veiculo.
+	 */
+	private Map<String, List<Photo>> buildPhotoMap() {
+		Map<String, List<Photo>> map = new LinkedHashMap<>();
 		if (!downloadPhotos) {
-			return pool;
+			return map;
 		}
-		for (int i = 1; i <= size; i++) {
-			AuctionItemImage image = imageStorageService.download("https://loremflickr.com/640/420/" + tag + "?lock=" + i);
-			if (image != null && image.getBytes().length > 0) {
-				pool.add(new Photo(image.getContentType(), image.getBytes()));
+		List<Vehicle> all = new ArrayList<>();
+		Collections.addAll(all, CARS);
+		Collections.addAll(all, MOTOS);
+		int lock = 1;
+		for (Vehicle vehicle : all) {
+			String tag = brandTag(vehicle);
+			List<Photo> photos = new ArrayList<>();
+			for (int i = 0; i < PHOTOS_PER_ITEM; i++) {
+				AuctionItemImage image = imageStorageService
+						.download("https://loremflickr.com/640/420/" + tag + "?lock=" + (lock++));
+				if (image != null && image.getBytes().length > 0) {
+					photos.add(new Photo(image.getContentType(), image.getBytes()));
+				}
 			}
+			map.put(vehicle.description(), photos);
 		}
-		LOG.info("Pool de fotos '{}' carregado com {} imagens reais.", tag, pool.size());
-		return pool;
+		LOG.info("Fotos reais carregadas para {} modelos de veiculo.", map.size());
+		return map;
+	}
+
+	private String brandTag(Vehicle vehicle) {
+		String brand = vehicle.description().split("/")[0].trim().toLowerCase().replace(" ", "");
+		String kind = "motorcycle".equals(vehicle.type()) ? "motorcycle" : "car";
+		return brand + "," + kind;
 	}
 
 	private AuctionItemImage svgImage(String description, String angle) {
