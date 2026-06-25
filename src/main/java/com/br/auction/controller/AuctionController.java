@@ -107,7 +107,17 @@ public class AuctionController {
 			@Parameter(description = "Codigo do estado") @RequestParam(required = false) String stateCode,
 			Pageable pageable) {
 		Page<Auction> auctions = auctionService.findAll(status, search, providerCode, stateCode, pageable);
-		return ResponseEntity.ok(auctions.map(AuctionListResponse::new));
+		Page<AuctionListResponse> responses = auctions.map(AuctionListResponse::new);
+		java.util.Map<String, Double> distancesByCity = new java.util.HashMap<>();
+		for (AuctionListResponse auction : responses.getContent()) {
+			if (auction.getCity() == null || auction.getCity().isBlank()) {
+				continue;
+			}
+			String key = auction.getCity() + "|" + (auction.getStateCode() == null ? "" : auction.getStateCode());
+			auction.setDistanceKm(distancesByCity.computeIfAbsent(key,
+					k -> distanceService.distanceKm(auction.getCity(), auction.getStateCode())));
+		}
+		return ResponseEntity.ok(responses);
 	}
 
 	@Operation(summary = "Buscar leilao por ID", description = "Retorna um leilao persistido com seus itens.")

@@ -58,6 +58,9 @@ public class AuctionListResponse {
 	@Schema(description = "Quantidade de itens carregados para o leilao")
 	private Integer itemCount;
 
+	@Schema(description = "Distancia em km entre a origem configurada e a cidade do leilao (null quando ainda nao geocodificada)")
+	private Double distanceKm;
+
 	public AuctionListResponse(Auction auction) {
 		this.id = auction.getId();
 		this.auctionNoticeNumber = auction.getAuctionNoticeNumber();
@@ -139,5 +142,13 @@ public class AuctionListResponse {
 
 	public Integer getItemCount() {
 		return itemCount;
+	}
+
+	public Double getDistanceKm() {
+		return distanceKm;
+	}
+
+	public void setDistanceKm(Double distanceKm) {
+		this.distanceKm = distanceKm;
 	}
 }
