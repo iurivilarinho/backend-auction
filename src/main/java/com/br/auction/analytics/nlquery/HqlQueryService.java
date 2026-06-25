@@ -1,0 +1,422 @@
+package com.br.auction.analytics.nlquery;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.time.temporal.Temporal;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import com.br.auction.analytics.assistant.AiCompletionPort;
+import com.br.auction.analytics.assistant.AiSettingsService;
+import com.br.auction.analytics.assistant.AiUnavailableException;
+import com.br.auction.analytics.nlquery.NlQueryDtos.ChartSpec;
+import com.br.auction.analytics.nlquery.NlQueryDtos.ColumnMeta;
+import com.br.auction.analytics.nlquery.NlQueryDtos.NlQueryResponse;
+import com.br.auction.analytics.nlquery.NlQueryDtos.QueryResult;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.Tuple;
+import jakarta.persistence.TupleElement;
+import jakarta.persistence.metamodel.Attribute;
+import jakarta.persistence.metamodel.EntityType;
+
+/**
+ * Assistente <b>text-to-HQL</b>: a IA gera HQL (Hibernate Query Language) sobre as
+ * entidades curadas {@code Bi*} (mapeadas via {@code @Subselect}); o Hibernate
+ * traduz para o dialeto do SGBD — portavel, sem SQL nativo nem view de banco. O
+ * schema apresentado a IA e montado do <b>metamodelo JPA</b> em runtime. No modo
+ * bypass libera qualquer entidade mapeada (somente leitura).
+ */
+@Service
+public class HqlQueryService {
+
+    private static final int MAX_ROWS = 1000;
+    /** Entidades curadas: prefixo do nome (mapeadas via @Subselect). */
+    private static final String CURATED_PREFIX = "Bi";
+
+    private final AiCompletionPort ai;
+    private final ObjectMapper objectMapper;
+    private final AiSettingsService aiSettingsService;
+    private final HqlGuard guard;
+
+    @PersistenceContext
+    private EntityManager entityManager;
+
+    public HqlQueryService(AiCompletionPort ai, ObjectMapper objectMapper, AiSettingsService aiSettingsService,
+            HqlGuard guard) {
+        this.ai = ai;
+        this.objectMapper = objectMapper;
+        this.aiSettingsService = aiSettingsService;
+        this.guard = guard;
+    }
+
+    public boolean aiAvailable() {
+        return ai.isAvailable();
+    }
+
+    public NlQueryResponse ask(String question, String previousHql) {
+        if (question == null || question.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe uma pergunta.");
+        }
+        String q = question.trim();
+        boolean bypass = aiSettingsService.global().isBypassGuard();
+        String schema = schemaText(bypass);
+        Set<String> allowed = bypass ? allEntityNames() : curatedEntityNames();
+
+        Plan plan;
+        try {
+            plan = parse(ai.complete(systemPrompt(schema), userPrompt(q, previousHql)));
+        } catch (AiUnavailableException offline) {
+            return messageOnly(q, "Assistente de IA indisponivel.", true);
+        }
+        if (plan == null || plan.hql == null || plan.hql.isBlank()) {
+            String msg = plan != null && plan.message != null ? plan.message
+                    : "Nao consegui montar uma consulta para isso. Tente reformular (marca, modelo, ano, cidade, "
+                            + "lance, FIPE, leilao, aquisicao, lucro...).";
+            return messageOnly(q, msg, false);
+        }
+        Outcome outcome = executeWithRetry(q, plan, schema, allowed);
+        if (outcome == null) {
+            return messageOnly(q, "Tentei montar essa consulta mas nao consegui executa-la. Pode reformular?", false);
+        }
+        String message = outcome.result.rows().isEmpty()
+                ? "Nao encontrei nenhum resultado para esse pedido."
+                : friendly(outcome.plan.message, "Aqui esta o que encontrei.");
+        return new NlQueryResponse(q, outcome.hql, outcome.plan.explanation, outcome.plan.chart,
+                outcome.result.columns(), outcome.result.rows(), outcome.result.rows().size(), true, false, message);
+    }
+
+    /** Executa o HQL; se falhar, pede UMA correcao a IA. Devolve null se nao der. */
+    private Outcome executeWithRetry(String question, Plan plan, String schema, Set<String> allowed) {
+        try {
+            String safe = guard.sanitize(plan.hql, allowed);
+            return new Outcome(safe, execute(safe, plan.limit), plan);
+        } catch (RuntimeException first) {
+            try {
+                Plan fixed = parse(ai.complete(systemPrompt(schema), "O pedido foi: " + question
+                        + "\nO HQL abaixo falhou: " + describe(first) + "\nHQL:\n" + plan.hql
+                        + "\nCorrija e devolva o JSON. Se nao der, devolva \"hql\": null e uma \"message\"."));
+                if (fixed == null || fixed.hql == null || fixed.hql.isBlank()) {
+                    return null;
+                }
+                String safe = guard.sanitize(fixed.hql, allowed);
+                return new Outcome(safe, execute(safe, fixed.limit), fixed);
+            } catch (RuntimeException second) {
+                return null;
+            }
+        }
+    }
+
+    public NlQueryResponse run(String hql, ChartSpec chart, String title) {
+        Set<String> allowed = aiSettingsService.global().isBypassGuard() ? allEntityNames() : curatedEntityNames();
+        String safe = guard.sanitize(hql, allowed);
+        QueryResult result;
+        try {
+            result = execute(safe, null);
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Nao foi possivel recarregar esta visao (a consulta salva falhou).");
+        }
+        ChartSpec safeChart = chart != null ? chart : new ChartSpec("none", null, List.of(), null);
+        String name = title != null && !title.isBlank() ? title : "Visao salva";
+        return new NlQueryResponse(name, safe, "", safeChart, result.columns(), result.rows(),
+                result.rows().size(), false, false, "Visao recarregada.");
+    }
+
+    public byte[] exportExcel(String hql) {
+        Set<String> allowed = aiSettingsService.global().isBypassGuard() ? allEntityNames() : curatedEntityNames();
+        String safe = guard.sanitize(hql, allowed);
+        QueryResult result = runOrBadRequest(safe);
+        return buildExcel(result);
+    }
+
+    // ------------------------------------------------------------- execucao
+
+    public QueryResult execute(String hql, Integer limit) {
+        int max = limit != null && limit > 0 ? Math.min(limit, MAX_ROWS) : MAX_ROWS;
+        List<Tuple> tuples = entityManager.createQuery(hql, Tuple.class).setMaxResults(max).getResultList();
+        List<ColumnMeta> columns = new ArrayList<>();
+        List<List<Object>> rows = new ArrayList<>();
+        boolean first = true;
+        for (Tuple tuple : tuples) {
+            List<TupleElement<?>> elements = tuple.getElements();
+            if (first) {
+                for (int i = 0; i < elements.size(); i++) {
+                    TupleElement<?> el = elements.get(i);
+                    String name = el.getAlias() != null ? el.getAlias() : "col" + (i + 1);
+                    columns.add(new ColumnMeta(name, simpleType(el.getJavaType())));
+                }
+                first = false;
+            }
+            List<Object> row = new ArrayList<>(elements.size());
+            for (int i = 0; i < elements.size(); i++) {
+                row.add(tuple.get(i));
+            }
+            rows.add(row);
+        }
+        return new QueryResult(columns, rows);
+    }
+
+    private QueryResult runOrBadRequest(String hql) {
+        try {
+            return execute(hql, null);
+        } catch (HqlGuardException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (RuntimeException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "A consulta gerada nao pode ser executada. Tente reformular a pergunta.");
+        }
+    }
+
+    // ------------------------------------------------------------- schema (metamodelo)
+
+    private Set<String> curatedEntityNames() {
+        Set<String> names = new LinkedHashSet<>();
+        for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
+            if (entity.getName().startsWith(CURATED_PREFIX)) {
+                names.add(entity.getName());
+            }
+        }
+        return names;
+    }
+
+    private Set<String> allEntityNames() {
+        Set<String> names = new LinkedHashSet<>();
+        for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
+            names.add(entity.getName());
+        }
+        return names;
+    }
+
+    /** Monta o schema (entidades + atributos) a partir do metamodelo JPA. */
+    private String schemaText(boolean bypass) {
+        StringBuilder sb = new StringBuilder(
+                "Voce consulta um modelo JPA de leiloes de veiculos. Entidades disponiveis (use SO estas):\n\n");
+        for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
+            boolean curated = entity.getName().startsWith(CURATED_PREFIX);
+            if (!bypass && !curated) {
+                continue;
+            }
+            sb.append(entity.getName()).append('(');
+            boolean firstAttr = true;
+            for (Attribute<?, ?> attr : entity.getAttributes()) {
+                if (!firstAttr) {
+                    sb.append(", ");
+                }
+                sb.append(attr.getName()).append(' ').append(attr.getJavaType().getSimpleName());
+                firstAttr = false;
+            }
+            sb.append(")\n");
+        }
+        return sb.toString();
+    }
+
+    // ------------------------------------------------------------- prompt / parse
+
+    private String systemPrompt(String schema) {
+        return schema + """
+
+                Gere HQL (Hibernate Query Language), UM unico SELECT somente leitura:
+                - SEMPRE projecao explicita com alias em cada coluna
+                  (ex.: SELECT v.marca AS marca, count(v) AS total).
+                - pode usar group by, order by, count/sum/avg/min/max e
+                  funcoes de data (year(current_date), month(...), etc.).
+                - HQL NAO tem LIMIT inline. Para "top N"/"os N primeiros", ordene e inclua
+                  "limit": N no JSON (o sistema aplica setMaxResults).
+                - NUNCA use UPDATE/DELETE/INSERT, nem ';'.
+                - Referencia de mercado: se houver valorFipe > 0, a margem de mercado = valorFipe - lanceAtual
+                  (colunas prontas: margemFipe, margemPercentual). POREM o valorFipe normalmente e 0 (sem
+                  referencia FIPE nesta base). Nesse caso, para perguntas de RENTABILIDADE / "bom negocio" /
+                  "comprar com boa margem" / "abaixo do mercado", use como referencia de mercado a MEDIA de
+                  lanceAtual dos veiculos do MESMO modelo (ou marca+modelo+ano) e destaque os lotes ABERTOS
+                  cujo lanceAtual esta mais abaixo dessa media; economia = media_do_modelo - lanceAtual.
+                  Ex.: SELECT v.marca AS marca, v.modelo AS modelo, v.ano AS ano, v.lanceAtual AS lance,
+                       (SELECT avg(v2.lanceAtual) FROM BiVeiculo v2 WHERE v2.modelo = v.modelo) AS media_modelo,
+                       ((SELECT avg(v2.lanceAtual) FROM BiVeiculo v2 WHERE v2.modelo = v.modelo) - v.lanceAtual) AS economia,
+                       v.cidade AS cidade
+                       FROM BiVeiculo v WHERE v.statusLeilao <> 'Finalizado' AND v.lanceAtual > 0
+                       ORDER BY economia DESC  (com "limit": N).
+                - Lucro de um veiculo ja vendido = campo lucro de BiAquisicao.
+                - Status do leilao (BiVeiculo.statusLeilao): 'Publicado'/'Em Andamento' = aberto p/ lance;
+                  'Finalizado' = encerrado. Para "comprar agora", prefira nao-finalizados.
+                - FILTROS DE TEXTO sempre case-insensitive: use upper()/lower(), ex.:
+                  upper(v.marca) = upper('Honda') ou lower(v.cidade) LIKE lower('%uberlandia%').
+                  Os dados estao com marca/modelo em MAIUSCULAS e cidade em minusculas.
+                - Nao existe campo que separe MOTO de CARRO. Se a pergunta exigir isso, faca o melhor esforco
+                  por modelos conhecidos (motos: HONDA CG/BIZ/POP/CB, YAMAHA YBR/FACTOR/FAZER, etc.; carros:
+                  GOL, UNO, PALIO, CLASSIC, FIESTA...) usando LIKE, ou explique que a base nao distingue.
+
+                Grafico: escolha o "type" adequado.
+                - "composed" (barra+linha): a 1a coluna de "series" vira barra; as demais, linha.
+                - "scatter" (dispersao): "x" e a 1a de "series" devem ser colunas numericas.
+
+                Responda SOMENTE com um JSON, sem texto fora dele:
+                {"hql":"<UM SELECT HQL, ou null se nao der>","limit":<N inteiro ou omita>,
+                 "chart":{"type":"bar|line|area|scatter|composed|pie|none","x":"<coluna>","series":["<coluna numerica>"],"title":"<titulo>"},
+                 "explanation":"<frase tecnica>","message":"<resposta curta ao usuario>"}
+                """;
+    }
+
+    private String userPrompt(String question, String previousHql) {
+        StringBuilder sb = new StringBuilder();
+        if (previousHql != null && !previousHql.isBlank()) {
+            sb.append("Contexto — consulta anterior (use como base se for refinamento; senao ignore):\n")
+                    .append(previousHql).append("\n\n");
+        }
+        return sb.append("Pedido: ").append(question).toString();
+    }
+
+    private Plan parse(String raw) {
+        int start = raw == null ? -1 : raw.indexOf('{');
+        int end = raw == null ? -1 : raw.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        try {
+            JsonNode node = objectMapper.readTree(raw.substring(start, end + 1));
+            String hql = text(node, "hql");
+            String message = text(node, "message");
+            if (hql == null && message == null) {
+                return null;
+            }
+            Plan plan = new Plan();
+            plan.hql = hql;
+            plan.explanation = text(node, "explanation") != null ? text(node, "explanation") : "";
+            plan.message = message;
+            JsonNode limit = node.get("limit");
+            plan.limit = limit != null && limit.canConvertToInt() ? limit.asInt() : null;
+            JsonNode chartNode = node.get("chart");
+            if (hql == null || chartNode == null) {
+                plan.chart = new ChartSpec("none", null, List.of(), null);
+            } else {
+                plan.chart = new ChartSpec(textOr(chartNode, "type", "bar"), text(chartNode, "x"), series(chartNode),
+                        text(chartNode, "title"));
+            }
+            return plan;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<String> series(JsonNode chartNode) {
+        JsonNode s = chartNode.get("series");
+        if (s == null || !s.isArray()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        s.forEach(item -> {
+            if (item.isTextual() && !item.asText().isBlank()) {
+                out.add(item.asText().trim());
+            }
+        });
+        return out;
+    }
+
+    private String text(JsonNode node, String field) {
+        JsonNode v = node.get(field);
+        return v == null || v.isNull() || !v.isTextual() || v.asText().isBlank() ? null : v.asText().trim();
+    }
+
+    private String textOr(JsonNode node, String field, String fallback) {
+        String v = text(node, field);
+        return v != null ? v : fallback;
+    }
+
+    // ------------------------------------------------------------- helpers
+
+    private NlQueryResponse messageOnly(String question, String message, boolean aiOffline) {
+        return new NlQueryResponse(question, null, "", new ChartSpec("none", null, List.of(), null),
+                List.of(), List.of(), 0, false, aiOffline, message);
+    }
+
+    private String friendly(String aiMessage, String fallback) {
+        return aiMessage != null && !aiMessage.isBlank() ? aiMessage : fallback;
+    }
+
+    private String describe(RuntimeException e) {
+        String m = e.getMessage();
+        if (m == null) {
+            return e.getClass().getSimpleName();
+        }
+        return m.length() > 300 ? m.substring(0, 300) : m;
+    }
+
+    private String simpleType(Class<?> type) {
+        if (type == null) {
+            return "text";
+        }
+        if (Number.class.isAssignableFrom(type)) {
+            return "number";
+        }
+        if (Boolean.class.isAssignableFrom(type)) {
+            return "boolean";
+        }
+        if (Temporal.class.isAssignableFrom(type) || Date.class.isAssignableFrom(type)) {
+            return "date";
+        }
+        return "text";
+    }
+
+    private byte[] buildExcel(QueryResult result) {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Consulta");
+            List<ColumnMeta> columns = result.columns();
+            Row header = sheet.createRow(0);
+            for (int c = 0; c < columns.size(); c++) {
+                header.createCell(c).setCellValue(columns.get(c).name());
+            }
+            List<List<Object>> rows = result.rows();
+            for (int r = 0; r < rows.size(); r++) {
+                Row row = sheet.createRow(r + 1);
+                List<Object> values = rows.get(r);
+                for (int c = 0; c < values.size(); c++) {
+                    Cell cell = row.createCell(c);
+                    Object value = values.get(c);
+                    if (value == null) {
+                        cell.setBlank();
+                    } else if (value instanceof Number number) {
+                        cell.setCellValue(number.doubleValue());
+                    } else if (value instanceof Boolean bool) {
+                        cell.setCellValue(bool);
+                    } else {
+                        cell.setCellValue(String.valueOf(value));
+                    }
+                }
+            }
+            for (int c = 0; c < columns.size(); c++) {
+                sheet.autoSizeColumn(c);
+            }
+            workbook.write(out);
+            return out.toByteArray();
+        } catch (IOException e) {
+            throw new UncheckedIOException("Falha ao gerar o Excel da consulta.", e);
+        }
+    }
+
+    private static final class Plan {
+        private String hql;
+        private String explanation;
+        private String message;
+        private Integer limit;
+        private ChartSpec chart;
+    }
+
+    private record Outcome(String hql, QueryResult result, Plan plan) {
+    }
+}
