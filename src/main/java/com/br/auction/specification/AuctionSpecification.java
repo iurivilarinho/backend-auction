@@ -1,4 +1,4 @@
-package specification;
+package com.br.auction.specification;
 
 import java.util.ArrayList;
 import java.util.List;

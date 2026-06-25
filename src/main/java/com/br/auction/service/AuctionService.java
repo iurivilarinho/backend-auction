@@ -15,10 +15,11 @@ import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.repository.AuctionRepository;
 
+import com.br.auction.specification.AuctionItemSpecification;
+import com.br.auction.specification.AuctionSpecification;
+
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
-import specification.AuctionItemSpecification;
-import specification.AuctionSpecification;
 
 @Service
 public class AuctionService {

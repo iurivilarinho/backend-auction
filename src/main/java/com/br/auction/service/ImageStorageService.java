@@ -3,7 +3,9 @@ package com.br.auction.service;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,11 +37,18 @@ public class ImageStorageService {
 	}
 
 	/**
-	 * Substitui todas as imagens do item. Para data URIs (data:image/...) baixa e armazena os
-	 * bytes no banco; para URLs http(s) (fotos reais do provedor) guarda apenas a URL, evitando
-	 * baixar milhares de imagens no scraping. A foto real continua sendo exibida pela URL.
+	 * Substitui as imagens do item, baixando e armazenando os bytes no banco para que as fotos
+	 * continuem disponiveis mesmo que o provedor saia do ar. Os bytes ja persistidos para a mesma
+	 * URL sao reaproveitados, de modo que as execucoes recorrentes (a cada 15 min) nao rebaixem
+	 * imagens inalteradas. Se o download falhar, guarda ao menos a URL de origem como referencia.
 	 */
 	public void replaceImages(AuctionItem item, List<String> urls) {
+		Map<String, AuctionItemImage> alreadyStored = new HashMap<>();
+		for (AuctionItemImage existing : item.getImages()) {
+			if (existing.getSourceUrl() != null && existing.getData() != null && !existing.getData().isBlank()) {
+				alreadyStored.putIfAbsent(existing.getSourceUrl(), existing);
+			}
+		}
 		item.clearImages();
 		if (urls == null) {
 			return;
@@ -54,10 +63,27 @@ public class ImageStorageService {
 				if (image != null) {
 					item.addImage(image);
 				}
-			} else {
-				item.addImage(new AuctionItemImage(trimmed, null, null));
+				continue;
 			}
+			AuctionItemImage cached = alreadyStored.get(trimmed);
+			if (cached != null) {
+				item.addImage(reuse(cached));
+				continue;
+			}
+			AuctionItemImage downloaded = download(trimmed);
+			item.addImage(downloaded != null ? downloaded : new AuctionItemImage(trimmed, null, null));
 		}
+	}
+
+	/**
+	 * Cria uma nova imagem reaproveitando os bytes ja persistidos (evita rebaixar do provedor).
+	 */
+	private AuctionItemImage reuse(AuctionItemImage source) {
+		AuctionItemImage copy = new AuctionItemImage();
+		copy.setSourceUrl(source.getSourceUrl());
+		copy.setContentType(source.getContentType());
+		copy.setData(source.getData());
+		return copy;
 	}
 
 	/**

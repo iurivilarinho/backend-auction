@@ -20,4 +20,6 @@ public interface IntegrationRunRepository extends JpaRepository<IntegrationRun, 
 	List<IntegrationRun> findByStatusOrderByStartedAtDesc(RunStatus status);
 
 	long countByStatus(RunStatus status);
+
+	boolean existsByIntegrationIdAndStatus(Long integrationId, RunStatus status);
 }

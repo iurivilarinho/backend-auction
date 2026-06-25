@@ -9,6 +9,7 @@ import java.util.Map;
 import com.br.auction.garage.enums.AcquisitionStatus;
 import com.br.auction.garage.enums.ExpenseType;
 import com.br.auction.garage.models.Acquisition;
+import com.br.auction.garage.models.AcquisitionExpense;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -57,7 +58,7 @@ public class AcquisitionDashboardResponse {
 			acquisitionSum = acquisitionSum.add(acqValue);
 
 			BigDecimal itemExpenses = BigDecimal.ZERO;
-			for (var expense : acquisition.getExpenses()) {
+			for (AcquisitionExpense expense : acquisition.getExpenses()) {
 				BigDecimal value = expense.effectiveValue();
 				itemExpenses = itemExpenses.add(value);
 				if (expense.getType() != null) {

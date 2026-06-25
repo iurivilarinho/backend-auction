@@ -25,10 +25,9 @@ import com.br.auction.response.AuctionJsonResponse;
 import com.br.auction.response.AuctionListJsonResponse;
 import com.br.auction.response.AuctionListResponse;
 import com.br.auction.response.AuctionResponse;
-import com.br.auction.response.AuctionSyncResultResponse;
 import com.br.auction.response.HealthResponse;
 import com.br.auction.response.ProviderResponse;
-import com.br.auction.service.AuctionDetranImportService;
+import com.br.auction.integration.execution.IntegrationScheduler;
 import com.br.auction.service.AuctionDetranService;
 import com.br.auction.service.AuctionService;
 import com.br.auction.service.AuctionSourceFilter;
@@ -45,14 +44,14 @@ public class AuctionController {
 
 	private final AuctionService auctionService;
 	private final AuctionDetranService detranService;
-	private final AuctionDetranImportService importService;
+	private final IntegrationScheduler integrationScheduler;
 	private final Environment environment;
 
 	public AuctionController(AuctionService auctionService, AuctionDetranService detranService,
-			AuctionDetranImportService importService, Environment environment) {
+			IntegrationScheduler integrationScheduler, Environment environment) {
 		this.auctionService = auctionService;
 		this.detranService = detranService;
-		this.importService = importService;
+		this.integrationScheduler = integrationScheduler;
 		this.environment = environment;
 	}
 
@@ -76,39 +75,17 @@ public class AuctionController {
 		return ResponseEntity.ok(providers);
 	}
 
-	@Operation(summary = "Sincronizar leiloes do provedor", description = "Dispara em segundo plano a coleta de leiloes no provedor externo e persiste no banco. A coleta completa pode demorar; os dados aparecem em instantes. Minas Gerais e o provedor padrao atual.")
-	@ApiResponse(responseCode = "202", description = "Sincronizacao iniciada")
+	@Operation(summary = "Atualizar fonte (via modulo de integracao)", description = "Dispara agora as integracoes agendadas do provedor (coleta de leiloes e lotes). Toda informacao do provedor passa pelo modulo de integracao; os dados sao atualizados de forma incremental em segundo plano.")
+	@ApiResponse(responseCode = "202", description = "Coleta iniciada")
 	@PostMapping("/auctions/sync")
-	public ResponseEntity<java.util.Map<String, Object>> syncAuctions(
-			@Parameter(description = "Codigo do provedor. Padrao: DETRAN_MG") @RequestParam(required = false) String providerCode,
-			@Parameter(description = "Numero do edital no filtro do portal") @RequestParam(required = false) String auctionNumber,
-			@Parameter(description = "Data inicial de encerramento no formato dd/MM/yyyy") @RequestParam(required = false) String closingDateStart,
-			@Parameter(description = "Data final de encerramento no formato dd/MM/yyyy") @RequestParam(required = false) String closingDateEnd,
-			@Parameter(description = "ID do municipio no portal") @RequestParam(required = false) String municipalityId,
-			@Parameter(description = "Codigo do tipo de veiculo no portal") @RequestParam(required = false) String vehicleTypeCode,
-			@Parameter(description = "Marca no portal") @RequestParam(required = false) String brand,
-			@Parameter(description = "Modelo no portal") @RequestParam(required = false) String model,
-			@Parameter(description = "Ano do veiculo no portal") @RequestParam(required = false) String vehicleYear,
-			@Parameter(description = "Cor do veiculo no portal") @RequestParam(required = false) String color,
-			@Parameter(description = "Condicao no portal: R para conservado, S para sucata") @RequestParam(required = false) String condition) {
-		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
-		AuctionSourceFilter filter = new AuctionSourceFilter();
-		filter.setAuctionNumber(auctionNumber);
-		filter.setClosingDateStart(closingDateStart);
-		filter.setClosingDateEnd(closingDateEnd);
-		filter.setMunicipalityId(municipalityId);
-		filter.setVehicleTypeCode(vehicleTypeCode);
-		filter.setBrand(brand);
-		filter.setModel(model);
-		filter.setVehicleYear(vehicleYear);
-		filter.setColor(color);
-		filter.setCondition(condition);
-
-		importService.syncAuctionsAsync(provider, filter);
+	public ResponseEntity<java.util.Map<String, Object>> syncAuctions() {
+		int started = integrationScheduler.triggerNow();
 		java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-		body.put("started", true);
-		body.put("providerCode", provider.getCode());
-		body.put("message", "Sincronizacao iniciada em segundo plano. Os leiloes serao atualizados em instantes.");
+		body.put("started", started > 0);
+		body.put("integrations", started);
+		body.put("message", started > 0
+				? "Coleta do provedor iniciada via modulo de integracao. Os dados serao atualizados em instantes."
+				: "Nenhuma integracao agendada ativa encontrada.");
 		return ResponseEntity.accepted().body(body);
 	}
 

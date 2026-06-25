@@ -1,7 +1,5 @@
 package com.br.auction.integration.bootstrap;
 
-import java.util.List;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,7 +9,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.br.auction.enums.AuctionProvider;
+import com.br.auction.integration.credential.Credential;
+import com.br.auction.integration.credential.CredentialRepository;
 import com.br.auction.integration.enums.ConnectorType;
+import com.br.auction.integration.enums.CredentialType;
 import com.br.auction.integration.enums.FetchMode;
 import com.br.auction.integration.enums.FieldDataType;
 import com.br.auction.integration.enums.IntegrationStatus;
@@ -28,61 +29,114 @@ import com.br.auction.integration.source.IntegrationSourceRepository;
 import com.br.auction.integration.target.InternalTargetModel;
 
 /**
- * Cadastra/configura automaticamente a integracao com o provedor inicial da aplicacao
- * (DETRAN_MG) quando o banco esta vazio. Serve de configuracao de partida e de exemplo
- * completo de fonte -> de->para -> modelos internos, sem acoplar a aplicacao apenas a MG.
+ * Garante (de forma idempotente, a cada inicializacao) que a credencial e as integracoes do
+ * provedor inicial (DETRAN_MG) estejam sempre cadastradas. Toda informacao do provedor passa
+ * pelo modulo de integracao: as integracoes consomem o scraping real exposto como feed JSON.
  */
 @Component
 @Order(20)
 public class IntegrationSeedRunner implements CommandLineRunner {
 
 	private static final Logger LOG = LoggerFactory.getLogger(IntegrationSeedRunner.class);
+	private static final String CRON_EVERY_15_MIN = "0 0/15 * * * *";
 
 	private final IntegrationSourceRepository sourceRepository;
 	private final SourceModelRepository sourceModelRepository;
 	private final IntegrationRepository integrationRepository;
+	private final CredentialRepository credentialRepository;
 	private final boolean seedEnabled;
 	private final String selfUrl;
+	private final String panelCpf;
+	private final String panelPassword;
 
 	public IntegrationSeedRunner(IntegrationSourceRepository sourceRepository,
 			SourceModelRepository sourceModelRepository, IntegrationRepository integrationRepository,
+			CredentialRepository credentialRepository,
 			@Value("${integration.seed.enabled:true}") boolean seedEnabled,
-			@Value("${app.self-url:http://localhost:8087}") String selfUrl) {
+			@Value("${app.self-url:http://localhost:8087}") String selfUrl,
+			@Value("${detran.panel.cpf:}") String panelCpf,
+			@Value("${detran.panel.password:}") String panelPassword) {
 		this.sourceRepository = sourceRepository;
 		this.sourceModelRepository = sourceModelRepository;
 		this.integrationRepository = integrationRepository;
+		this.credentialRepository = credentialRepository;
 		this.seedEnabled = seedEnabled;
 		this.selfUrl = selfUrl;
+		this.panelCpf = panelCpf;
+		this.panelPassword = panelPassword;
 	}
 
 	@Override
 	@Transactional
 	public void run(String... args) {
-		if (!seedEnabled || integrationRepository.count() > 0) {
+		if (!seedEnabled) {
 			return;
 		}
 
 		AuctionProvider provider = AuctionProvider.defaultProvider();
+
+		ensurePanelCredential();
+
 		IntegrationSource source = sourceRepository.findByCode("DETRAN_MG_SOURCE")
 				.orElseGet(() -> sourceRepository.save(buildSource(provider)));
-
 		SourceModel auctionModel = sourceModelRepository.findByCode("DETRAN_MG_AUCTIONS")
 				.orElseGet(() -> sourceModelRepository.save(buildAuctionModel()));
 		SourceModel lotModel = sourceModelRepository.findByCode("DETRAN_MG_LOTS")
 				.orElseGet(() -> sourceModelRepository.save(buildLotModel()));
 
-		integrationRepository.save(buildAuctionIntegration(provider, source, auctionModel));
-		integrationRepository.save(buildLotIntegration(provider, source, lotModel));
+		integrationRepository.findByCode("DETRAN_MG_AUCTIONS_IN")
+				.ifPresentOrElse(this::reconcileSchedule,
+						() -> integrationRepository.save(buildAuctionIntegration(provider, source, auctionModel)));
+		integrationRepository.findByCode("DETRAN_MG_LOTS_IN")
+				.ifPresentOrElse(this::reconcileSchedule,
+						() -> integrationRepository.save(buildLotIntegration(provider, source, lotModel)));
 
-		// Integracao de coleta (pull) de exemplo: consome um feed JSON paginado do proprio
-		// backend, permitindo executar manualmente e acompanhar o progresso "integrando...".
-		IntegrationSource feedSource = sourceRepository.findByCode("DEMO_FEED")
-				.orElseGet(() -> sourceRepository.save(buildFeedSource(provider)));
-		SourceModel feedModel = sourceModelRepository.findByCode("DEMO_AUCTIONS_FEED")
-				.orElseGet(() -> sourceModelRepository.save(buildFeedModel()));
-		integrationRepository.save(buildFeedIntegration(feedSource, feedModel));
+		LOG.info("Integracao com o provedor {} garantida (seed idempotente).", provider.getCode());
+	}
 
-		LOG.info("Integracao com o provedor {} cadastrada automaticamente (seed inicial).", provider.getCode());
+	/**
+	 * Garante que as integracoes do provedor permanecam agendadas (recorrentes a cada 15 min) e
+	 * ativas, mesmo em bancos criados por versoes anteriores do seed (que as cadastravam como
+	 * MANUAL). Reconciliacao idempotente: so persiste quando algo de fato muda.
+	 */
+	private void reconcileSchedule(Integration integration) {
+		boolean changed = false;
+		if (integration.getTriggerMode() != TriggerMode.SCHEDULED) {
+			integration.setTriggerMode(TriggerMode.SCHEDULED);
+			changed = true;
+		}
+		if (!CRON_EVERY_15_MIN.equals(integration.getCronExpression())) {
+			integration.setCronExpression(CRON_EVERY_15_MIN);
+			changed = true;
+		}
+		if (integration.getStatus() != IntegrationStatus.ACTIVE) {
+			integration.setStatus(IntegrationStatus.ACTIVE);
+			changed = true;
+		}
+		if (!Boolean.TRUE.equals(integration.getActive())) {
+			integration.setActive(Boolean.TRUE);
+			changed = true;
+		}
+		if (changed) {
+			integrationRepository.save(integration);
+			LOG.info("Integracao {} reconciliada para coleta recorrente (SCHEDULED, a cada 15 min).",
+					integration.getCode());
+		}
+	}
+
+	private void ensurePanelCredential() {
+		if (panelCpf == null || panelCpf.isBlank() || credentialRepository.existsByCode("DETRAN_MG_PANEL")) {
+			return;
+		}
+		Credential credential = new Credential();
+		credential.setCode("DETRAN_MG_PANEL");
+		credential.setName("Painel DETRAN-MG (login do arrematante)");
+		credential.setType(CredentialType.BASIC);
+		credential.setUsername(panelCpf);
+		credential.setPassword(panelPassword);
+		credential.setActive(Boolean.TRUE);
+		credentialRepository.save(credential);
+		LOG.info("Credencial do painel DETRAN-MG cadastrada automaticamente.");
 	}
 
 	private IntegrationSource buildSource(AuctionProvider provider) {
@@ -133,6 +187,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		model.setItemsJsonPath("lots");
 		model.setHasNextJsonPath("hasNext");
 		model.setSourceMethod(SourceMethod.GET);
+		model.setPageSize(5000);
 		model.setBusinessKeyField("lotId");
 		addField(model, "lotId", "ID do lote", FieldDataType.STRING, true);
 		addField(model, "auctionId", "ID do leilao pai", FieldDataType.STRING, true);
@@ -159,11 +214,12 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		Integration integration = new Integration();
 		integration.setCode("DETRAN_MG_AUCTIONS_IN");
 		integration.setName("Leiloes " + provider.getName());
-		integration.setDescription("Integra os leiloes do provedor no modelo interno Auction");
+		integration.setDescription("Coleta os leiloes do provedor (a cada 15 min) no modelo interno Auction");
 		integration.setSource(source);
 		integration.setSourceModel(model);
 		integration.setTargetModel(InternalTargetModel.AUCTION);
-		integration.setTriggerMode(TriggerMode.MANUAL);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
 		integration.setFetchMode(FetchMode.FULL);
 		integration.setStatus(IntegrationStatus.ACTIVE);
 		integration.setActive(Boolean.TRUE);
@@ -182,11 +238,12 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		Integration integration = new Integration();
 		integration.setCode("DETRAN_MG_LOTS_IN");
 		integration.setName("Lotes " + provider.getName());
-		integration.setDescription("Integra os lotes/veiculos do provedor no modelo interno AuctionItem");
+		integration.setDescription("Coleta os lotes/veiculos do provedor (a cada 15 min) no modelo interno AuctionItem");
 		integration.setSource(source);
 		integration.setSourceModel(model);
 		integration.setTargetModel(InternalTargetModel.AUCTION_ITEM);
-		integration.setTriggerMode(TriggerMode.MANUAL);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
 		integration.setFetchMode(FetchMode.FULL);
 		integration.setStatus(IntegrationStatus.ACTIVE);
 		integration.setActive(Boolean.TRUE);
@@ -197,69 +254,6 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "vehicleDescription", "vehicleDescription", null, false, 4);
 		addMapping(integration, "currentBidValue", "currentBidValue", "MONEY_BR", false, 5);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 6);
-		return integration;
-	}
-
-	private IntegrationSource buildFeedSource(AuctionProvider provider) {
-		IntegrationSource source = new IntegrationSource();
-		source.setCode("DEMO_FEED");
-		source.setName("Provedor de exemplo (feed JSON)");
-		source.setDescription("Feed REST paginado do proprio backend para demonstrar a coleta (pull)");
-		source.setConnectorType(ConnectorType.REST);
-		source.setBaseUrl(selfUrl);
-		source.setProviderCode(provider.getCode());
-		source.setProviderName(provider.getName());
-		source.setStateCode(provider.getStateCode());
-		source.setStateName(provider.getStateName());
-		source.setActive(Boolean.TRUE);
-		return source;
-	}
-
-	private SourceModel buildFeedModel() {
-		SourceModel model = new SourceModel();
-		model.setCode("DEMO_AUCTIONS_FEED");
-		model.setName("Leiloes do feed de exemplo");
-		model.setDescription("Estrutura paginada {items, hasNext} do feed de exemplo");
-		model.setConnectorType(ConnectorType.REST);
-		model.setResourcePath("api/sample/provider/auctions");
-		model.setItemsJsonPath("items");
-		model.setHasNextJsonPath("hasNext");
-		model.setPageParamName("page");
-		model.setPageSizeParamName("pageSize");
-		model.setPageSize(4);
-		model.setSourceMethod(SourceMethod.GET);
-		model.setBusinessKeyField("auctionId");
-		addField(model, "auctionId", "ID do leilao", FieldDataType.STRING, true);
-		addField(model, "auctionNoticeNumber", "Numero do edital", FieldDataType.STRING, false);
-		addField(model, "city", "Cidade", FieldDataType.STRING, false);
-		addField(model, "auctioneer", "Patio/Leiloeiro", FieldDataType.STRING, false);
-		addField(model, "status", "Status", FieldDataType.STRING, false);
-		addField(model, "closingDate", "Data de encerramento", FieldDataType.STRING, false);
-		addField(model, "auctionYear", "Ano", FieldDataType.STRING, false);
-		addField(model, "sourceUrl", "URL", FieldDataType.STRING, false);
-		return model;
-	}
-
-	private Integration buildFeedIntegration(IntegrationSource source, SourceModel model) {
-		Integration integration = new Integration();
-		integration.setCode("DEMO_AUCTIONS_SYNC");
-		integration.setName("Sincronizar leiloes (exemplo)");
-		integration.setDescription("Coleta leiloes do feed de exemplo e grava no modelo interno Auction");
-		integration.setSource(source);
-		integration.setSourceModel(model);
-		integration.setTargetModel(InternalTargetModel.AUCTION);
-		integration.setTriggerMode(TriggerMode.MANUAL);
-		integration.setFetchMode(FetchMode.FULL);
-		integration.setStatus(IntegrationStatus.ACTIVE);
-		integration.setActive(Boolean.TRUE);
-		addMapping(integration, "auctionId", "detranAuctionId", null, true, 0);
-		addMapping(integration, "auctionNoticeNumber", "auctionNoticeNumber", null, false, 1);
-		addMapping(integration, "city", "city", null, false, 2);
-		addMapping(integration, "auctioneer", "auctioneer", null, false, 3);
-		addMapping(integration, "status", "status", null, false, 4);
-		addMapping(integration, "closingDate", "closingDate", null, false, 5);
-		addMapping(integration, "auctionYear", "auctionYear", null, false, 6);
-		addMapping(integration, "sourceUrl", "sourceUrl", null, false, 7);
 		return integration;
 	}
 
@@ -274,9 +268,5 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		mapping.setUniqueKey(uniqueKey);
 		mapping.setOrdem(ordem);
 		integration.getFieldMappings().add(mapping);
-	}
-
-	public List<String> seededIntegrationCodes() {
-		return List.of("DETRAN_MG_AUCTIONS_IN", "DETRAN_MG_LOTS_IN");
 	}
 }

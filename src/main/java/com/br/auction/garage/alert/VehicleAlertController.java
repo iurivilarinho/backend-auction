@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.br.auction.garage.models.VehicleAlert;
+
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -42,7 +44,7 @@ public class VehicleAlertController {
 	@ApiResponse(responseCode = "201", description = "Alerta criado")
 	@PostMapping
 	public ResponseEntity<VehicleAlertResponse> create(@Valid @RequestBody VehicleAlertRequest request) {
-		var alert = service.create(request);
+		VehicleAlert alert = service.create(request);
 		return ResponseEntity.status(HttpStatus.CREATED)
 				.body(new VehicleAlertResponse(alert, service.countMatches(alert)));
 	}
@@ -51,7 +53,7 @@ public class VehicleAlertController {
 	@PutMapping("/{id}")
 	public ResponseEntity<VehicleAlertResponse> update(@PathVariable Long id,
 			@Valid @RequestBody VehicleAlertRequest request) {
-		var alert = service.update(id, request);
+		VehicleAlert alert = service.update(id, request);
 		return ResponseEntity.ok(new VehicleAlertResponse(alert, service.countMatches(alert)));
 	}
 

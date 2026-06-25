@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.br.auction.integration.source.IntegrationSource;
 import com.br.auction.integration.target.InternalTargetModel;
@@ -41,16 +42,19 @@ public class InternalDestinationSender {
 		this.imageStorageService = imageStorageService;
 	}
 
+	/**
+	 * Faz o upsert de um registro nos modelos internos dentro de uma transacao propria (por item),
+	 * para que o acesso as colecoes LAZY (ex.: imagens) ocorra com sessao aberta e para que uma
+	 * falha isole o rollback apenas daquele item. Excecoes sao propagadas para o executor marcar o
+	 * item como falho (e desfazer eventuais escritas parciais).
+	 */
+	@Transactional
 	public SendResult send(InternalTargetModel targetModel, IntegrationSource source, String businessKey,
 			Map<String, Object> payload) {
-		try {
-			return switch (targetModel) {
-				case AUCTION -> persistAuction(source, businessKey, payload);
-				case AUCTION_ITEM -> persistAuctionItem(source, businessKey, payload);
-			};
-		} catch (RuntimeException ex) {
-			return SendResult.failed(ex.getMessage());
-		}
+		return switch (targetModel) {
+			case AUCTION -> persistAuction(source, businessKey, payload);
+			case AUCTION_ITEM -> persistAuctionItem(source, businessKey, payload);
+		};
 	}
 
 	private SendResult persistAuction(IntegrationSource source, String businessKey, Map<String, Object> payload) {

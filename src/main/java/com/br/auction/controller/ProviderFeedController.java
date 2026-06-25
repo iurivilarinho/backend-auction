@@ -34,9 +34,12 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class ProviderFeedController {
 
 	private final AuctionDetranService detranService;
+	private final int maxAuctionsForLots;
 
-	public ProviderFeedController(AuctionDetranService detranService) {
+	public ProviderFeedController(AuctionDetranService detranService,
+			@org.springframework.beans.factory.annotation.Value("${auction.feed.max-auctions:3}") int maxAuctionsForLots) {
 		this.detranService = detranService;
+		this.maxAuctionsForLots = maxAuctionsForLots;
 	}
 
 	@Operation(summary = "Leiloes reais do provedor (JSON paginado)")
@@ -70,26 +73,31 @@ public class ProviderFeedController {
 			@RequestParam(defaultValue = "200") int pageSize) throws IOException {
 		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
 
-		String resolvedAuctionId = auctionId;
-		String resolvedYear = auctionYear;
-		if (resolvedAuctionId == null || resolvedAuctionId.isBlank()) {
+		// Lotes ja achatados (com o id do leilao pai) de um ou mais leiloes.
+		List<Map<String, Object>> allLots = new ArrayList<>();
+		if (auctionId != null && !auctionId.isBlank()) {
+			collectLots(provider, auctionId, auctionYear, allLots);
+		} else {
 			List<AuctionListJsonResponse> auctions = detranService.fetchAuctions(provider, new AuctionSourceFilter());
-			if (auctions.isEmpty()) {
-				return ResponseEntity.ok(page(List.of(), false, page, pageSize, "lots"));
+			int limit = maxAuctionsForLots <= 0 ? auctions.size() : Math.min(maxAuctionsForLots, auctions.size());
+			for (int i = 0; i < limit; i++) {
+				AuctionListJsonResponse auction = auctions.get(i);
+				collectLots(provider, auction.getAuctionId(), auction.getAuctionYear(), allLots);
 			}
-			resolvedAuctionId = auctions.get(0).getAuctionId();
-			resolvedYear = auctions.get(0).getAuctionYear();
 		}
 
-		AuctionJsonResponse details = detranService.fetchAuctionLots(provider, resolvedAuctionId, resolvedYear);
-		List<LotResponse> lots = details.getLots();
 		int from = Math.max(0, (page - 1) * pageSize);
-		int to = Math.min(lots.size(), from + pageSize);
-		List<Map<String, Object>> items = new ArrayList<>();
-		for (LotResponse lot : from >= lots.size() ? List.<LotResponse>of() : lots.subList(from, to)) {
-			items.add(lotToMap(lot, resolvedAuctionId));
+		int to = Math.min(allLots.size(), from + pageSize);
+		List<Map<String, Object>> items = from >= allLots.size() ? List.of() : allLots.subList(from, to);
+		return ResponseEntity.ok(page(items, to < allLots.size(), page, pageSize, "lots"));
+	}
+
+	private void collectLots(AuctionProvider provider, String auctionId, String auctionYear,
+			List<Map<String, Object>> target) throws IOException {
+		AuctionJsonResponse details = detranService.fetchAuctionLots(provider, auctionId, auctionYear);
+		for (LotResponse lot : details.getLots()) {
+			target.add(lotToMap(lot, auctionId));
 		}
-		return ResponseEntity.ok(page(items, to < lots.size(), page, pageSize, "lots"));
 	}
 
 	private Map<String, Object> auctionToMap(AuctionListJsonResponse auction) {

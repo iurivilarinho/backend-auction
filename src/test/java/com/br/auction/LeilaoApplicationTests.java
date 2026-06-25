@@ -8,6 +8,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 		"spring.jpa.hibernate.ddl-auto=create-drop",
 		"spring.h2.console.enabled=false",
 		"integration.seed.enabled=false",
+		"integration.scheduler.enabled=false",
 		"auction.scheduler.enabled=false" })
 class LeilaoApplicationTests {
 

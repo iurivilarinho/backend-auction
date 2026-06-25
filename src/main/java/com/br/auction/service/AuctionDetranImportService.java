@@ -72,19 +72,6 @@ public class AuctionDetranImportService {
 		}
 	}
 
-	/**
-	 * Dispara a sincronizacao em segundo plano (a coleta completa do provedor pode demorar).
-	 */
-	@org.springframework.scheduling.annotation.Async
-	@Transactional
-	public void syncAuctionsAsync(AuctionProvider provider, AuctionSourceFilter filter) {
-		try {
-			syncAuctions(provider, filter);
-		} catch (RuntimeException ex) {
-			LOGGER.warn("Falha na sincronizacao manual com o provedor: {}", ex.getMessage());
-		}
-	}
-
 	@Transactional
 	public AuctionSyncResultResponse syncAuctions(AuctionProvider provider, AuctionSourceFilter filter) {
 		LocalDateTime startedAt = LocalDateTime.now();
