@@ -244,6 +244,13 @@ public class HqlQueryService {
                   COPIE EXATAMENTE o bloco "DISTANCIA" do glossario abaixo, mudando SO os filtros (condicao do
                   lote, raio em km, status). NAO invente outra formula. Lat/lng SO existem em CityGeocode (g/og),
                   nunca em Auction/AuctionItem.
+                - ORDER BY/WHERE NAO podem usar um alias do SELECT dentro de uma EXPRESSAO (ex.:
+                  ORDER BY (media - i.currentBidValue) e INVALIDO -> "Could not interpret path expression").
+                  Use o alias SOZINHO (ex.: ORDER BY distancia_km ASC, ORDER BY economia DESC) OU repita a
+                  expressao inteira. Para ordenar por "economia"/"custo-beneficio", crie a coluna economia
+                  REPETINDO a subconsulta da media: (<subconsulta_media> - i.currentBidValue) AS economia,
+                  e depois ORDER BY economia DESC NULLS LAST (a media pode ser nula quando nao ha historico
+                  daquele modelo; NULLS LAST joga esses casos pro fim em vez do topo).
 
                 GLOSSARIO / MODELO (use exatamente assim):
                 - Veiculo/lote = AuctionItem (i): brand (marca), model (modelo), vehicleYear (ano),
@@ -271,10 +278,13 @@ public class HqlQueryService {
                               a.city AS cidade,
                               (SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
                                  WHERE i2.model = i.model AND a2.status = 'Finalizado'
-                                 AND a2.stateCode = a.stateCode) AS media_historica_regiao
+                                 AND a2.stateCode = a.stateCode) AS media_historica_regiao,
+                              ((SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
+                                 WHERE i2.model = i.model AND a2.status = 'Finalizado'
+                                 AND a2.stateCode = a.stateCode) - i.currentBidValue) AS economia
                        FROM AuctionItem i JOIN i.auction a
                        WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
-                       ORDER BY (media_historica_regiao - i.currentBidValue) DESC (com "limit": N).
+                       ORDER BY economia DESC NULLS LAST (com "limit": N).
                 - DISTANCIA ate o ponto de partida (em km): o ponto de origem esta em DistanceSetting (ds, id=1):
                   originLatitude/originLongitude (podem ser nulos) ou a cidade originCity/originState. As coordenadas
                   das cidades estao em CityGeocode (g): city, state, latitude, longitude, resolved. Junte a cidade do
@@ -290,6 +300,8 @@ public class HqlQueryService {
                               i.currentBidValue AS lance, a.city AS cidade,
                               (SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
                                  WHERE i2.model = i.model AND a2.status = 'Finalizado') AS media_historica,
+                              ((SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
+                                 WHERE i2.model = i.model AND a2.status = 'Finalizado') - i.currentBidValue) AS economia,
                               (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) AS distancia_km
                        FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
                        WHERE a = i.auction
@@ -297,7 +309,7 @@ public class HqlQueryService {
                          AND ds.id=1 AND lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState) AND og.resolved=true
                          AND a.status <> 'Finalizado' AND upper(i.lotType) LIKE '%CONSERV%'
                          AND (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) < 400
-                       ORDER BY distancia_km ASC (com "limit": N; ou ordene por (media_historica - i.currentBidValue) DESC p/ priorizar economia).
+                       ORDER BY economia DESC NULLS LAST (alias puro; ou ORDER BY distancia_km ASC) (com "limit": N).
                 - FILTROS DE TEXTO sempre case-insensitive: use upper()/lower(), ex.:
                   upper(i.brand) = upper('Honda') ou lower(a.city) LIKE lower('%uberlandia%').
                   Os dados estao com marca/modelo em MAIUSCULAS e cidade em minusculas.
