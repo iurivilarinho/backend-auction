@@ -59,28 +59,39 @@ public class EditalService {
 		if (id == null || id.isBlank() || year == null || year.isBlank()) {
 			return false;
 		}
-		try {
-			String url = panelUrl + editalPath + "/" + id.trim() + "/" + year.trim();
-			HttpResponse<byte[]> resp = newClient().send(
-					HttpRequest.newBuilder(URI.create(url))
-							.header("User-Agent", userAgent)
-							.header("Accept", "application/pdf,text/html")
-							.timeout(Duration.ofMillis(timeoutMs))
-							.GET().build(),
-					HttpResponse.BodyHandlers.ofByteArray());
-			String contentType = resp.headers().firstValue("Content-Type").orElse("");
-			if (resp.statusCode() >= 300 || !isPdf(resp.body(), contentType)) {
-				LOG.debug("Edital indisponivel para leilao {} / {} (HTTP {}, ct '{}')", id, year, resp.statusCode(),
-						contentType);
-				return false;
+		String url = panelUrl + editalPath + "/" + id.trim() + "/" + year.trim();
+		// O endpoint de edital do DETRAN responde 500 de forma intermitente; tentamos algumas vezes.
+		for (int attempt = 1; attempt <= 3; attempt++) {
+			try {
+				HttpResponse<byte[]> resp = newClient().send(
+						HttpRequest.newBuilder(URI.create(url))
+								.header("User-Agent", userAgent)
+								.header("Accept", "application/pdf,text/html")
+								.timeout(Duration.ofMillis(timeoutMs))
+								.GET().build(),
+						HttpResponse.BodyHandlers.ofByteArray());
+				String contentType = resp.headers().firstValue("Content-Type").orElse("");
+				if (resp.statusCode() < 300 && isPdf(resp.body(), contentType)) {
+					auction.setEditalBytes(resp.body());
+					auction.setEditalContentType("application/pdf");
+					auction.setEditalFileName("edital-leilao-" + id.trim() + "-" + year.trim() + ".pdf");
+					return true;
+				}
+				LOG.debug("Edital indisponivel leilao {}/{} (tentativa {}/3, HTTP {})", id, year, attempt,
+						resp.statusCode());
+			} catch (Exception ex) {
+				LOG.debug("Falha ao baixar edital {}/{} (tentativa {}/3): {}", id, year, attempt, ex.getMessage());
 			}
-			auction.setEditalBytes(resp.body());
-			auction.setEditalContentType("application/pdf");
-			auction.setEditalFileName("edital-leilao-" + id.trim() + "-" + year.trim() + ".pdf");
-			return true;
-		} catch (Exception ex) {
-			LOG.debug("Falha ao baixar edital do leilao {} / {}: {}", id, year, ex.getMessage());
-			return false;
+			sleepQuietly(700L * attempt);
+		}
+		return false;
+	}
+
+	private void sleepQuietly(long millis) {
+		try {
+			Thread.sleep(millis);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 		}
 	}
 
