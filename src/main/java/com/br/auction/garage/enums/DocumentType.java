@@ -6,8 +6,9 @@ package com.br.auction.garage.enums;
 public enum DocumentType {
 
 	CARTA_ARREMATACAO("Carta de arrematacao"),
-	EDITAL("Edital"),
-	ALVARA_LIBERACAO("Alvara de liberacao");
+	NOTA_ARREMATACAO("Nota de arrematacao"),
+	ALVARA_LIBERACAO("Alvara de liberacao"),
+	EDITAL("Edital");
 
 	private final String description;
 

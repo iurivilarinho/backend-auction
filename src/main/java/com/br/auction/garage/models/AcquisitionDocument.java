@@ -35,7 +35,9 @@ public class AcquisitionDocument {
 	private Acquisition acquisition;
 
 	@Enumerated(EnumType.STRING)
-	@Column(nullable = false, length = 30)
+	// VARCHAR (e nao ENUM nativo): permite novos tipos de documento sem quebrar o schema.
+	@org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
+	@Column(nullable = false, length = 40)
 	@Schema(description = "Tipo do documento")
 	private DocumentType type;
 

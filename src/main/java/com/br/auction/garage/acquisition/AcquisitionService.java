@@ -6,8 +6,10 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -194,10 +196,74 @@ public class AcquisitionService {
 		return acquisition;
 	}
 
+	/**
+	 * Sincroniza os documentos (Nota, Carta, Alvara) de um veiculo adquirido baixando-os do painel
+	 * e guardando-os no banco. Casa a aquisicao com o arremate do painel pela referencia do lote.
+	 */
 	@Transactional
 	public DetranPanelService.SyncResult syncDocuments(Long acquisitionId) {
 		Acquisition acquisition = findById(acquisitionId);
-		return detranPanelService.syncDocuments(acquisition);
+		DetranPanelService.PanelResult result = detranPanelService.fetchArremates(true);
+		if (!result.success()) {
+			return new DetranPanelService.SyncResult(false, result.message(), 0);
+		}
+		DetranPanelService.PanelArremate match = matchArremate(acquisition, result.arremates());
+		if (match == null) {
+			return new DetranPanelService.SyncResult(false,
+					"Nao encontrei este veiculo entre os seus arremates no painel.", 0);
+		}
+		int added = attachPanelDocuments(acquisition, match);
+		if (added > 0) {
+			repository.save(acquisition);
+		}
+		return new DetranPanelService.SyncResult(true,
+				added > 0 ? added + " documento(s) sincronizado(s) do painel."
+						: "Documentos ja estavam sincronizados.",
+				added);
+	}
+
+	/** Casa a aquisicao com um arremate do painel pela referencia "Leilao X / Lote Y". */
+	private DetranPanelService.PanelArremate matchArremate(Acquisition acquisition,
+			List<DetranPanelService.PanelArremate> arremates) {
+		String reference = acquisition.getLotReference();
+		for (DetranPanelService.PanelArremate a : arremates) {
+			if (reference != null && reference.equalsIgnoreCase(a.reference())) {
+				return a;
+			}
+		}
+		// Sem referencia (aquisicao manual): tenta casar pela descricao do veiculo.
+		String description = acquisition.resolveVehicleDescription();
+		if (description != null) {
+			for (DetranPanelService.PanelArremate a : arremates) {
+				if (description.equalsIgnoreCase(a.descricao())) {
+					return a;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Anexa os documentos do painel que ainda nao existem na aquisicao; retorna quantos adicionou. */
+	private int attachPanelDocuments(Acquisition acquisition, DetranPanelService.PanelArremate arremate) {
+		Set<DocumentType> present = new HashSet<>();
+		for (AcquisitionDocument existing : acquisition.getDocuments()) {
+			present.add(existing.getType());
+		}
+		int added = 0;
+		for (DetranPanelService.PanelDoc doc : arremate.documents()) {
+			if (present.contains(doc.type())) {
+				continue;
+			}
+			AcquisitionDocument document = new AcquisitionDocument();
+			document.setType(doc.type());
+			document.setFileName(doc.fileName());
+			document.setContentType(doc.contentType());
+			document.setBytes(doc.bytes());
+			acquisition.addDocument(document);
+			present.add(doc.type());
+			added++;
+		}
+		return added;
 	}
 
 	@Transactional
@@ -411,16 +477,74 @@ public class AcquisitionService {
 	 */
 	@Transactional
 	public ArrematesImportResult importArrematesAutomatically() {
-		DetranPanelService.FetchResult fetch = detranPanelService.fetchArrematesHtml();
-		if (!fetch.success() || fetch.html() == null || fetch.html().isBlank()) {
-			return new ArrematesImportResult(0, 0, fetch.message());
+		DetranPanelService.PanelResult panel = detranPanelService.fetchArremates(true);
+		if (!panel.success()) {
+			return new ArrematesImportResult(0, 0, panel.message());
 		}
-		ArrematesImportResult result = importArremates(fetch.html());
-		if (result.imported() == 0 && result.skipped() == 0) {
-			return new ArrematesImportResult(0, 0,
-					"Login no painel realizado, mas nenhum arremate foi reconhecido. Se necessario, cole o HTML manualmente.");
+		if (panel.arremates().isEmpty()) {
+			return new ArrematesImportResult(0, 0, "Nenhum veiculo arrematado encontrado no painel.");
 		}
-		return result;
+
+		// Indexa as aquisicoes existentes por referencia de lote (idempotencia + backfill de documentos).
+		Map<String, Acquisition> byReference = new HashMap<>();
+		for (Acquisition acquisition : repository.findAll()) {
+			if (acquisition.getLotReference() != null) {
+				byReference.put(acquisition.getLotReference().toLowerCase(), acquisition);
+			}
+		}
+
+		int imported = 0;
+		int skipped = 0;
+		int documents = 0;
+		for (DetranPanelService.PanelArremate arremate : panel.arremates()) {
+			String reference = arremate.reference();
+			Acquisition existing = byReference.get(reference.toLowerCase());
+			if (existing != null) {
+				// Ja importado: completa os documentos que faltarem (ex.: liberados depois).
+				int added = attachPanelDocuments(existing, arremate);
+				if (added > 0) {
+					repository.save(existing);
+					documents += added;
+				}
+				skipped++;
+				continue;
+			}
+
+			Acquisition acquisition = new Acquisition();
+			acquisition.setVehicleDescription(truncate(arremate.descricao()));
+			acquisition.setLotReference(reference);
+			acquisition.setStatus(AcquisitionStatus.ARREMATADO);
+			acquisition.setAcquisitionValue(parseMoney(arremate.valor()));
+			StringBuilder notes = new StringBuilder();
+			if (arremate.condicao() != null) {
+				notes.append("Condicao: ").append(arremate.condicao());
+			}
+			if (arremate.status() != null) {
+				if (notes.length() > 0) {
+					notes.append(" | ");
+				}
+				notes.append("Situacao no painel: ").append(arremate.status());
+			}
+			if (notes.length() > 0) {
+				acquisition.setNotes(notes.toString());
+			}
+			documents += attachPanelDocuments(acquisition, arremate);
+			repository.save(acquisition);
+			imported++;
+		}
+
+		StringBuilder message = new StringBuilder();
+		if (imported > 0) {
+			message.append(imported).append(" arremate(s) importado(s) do painel");
+		} else {
+			message.append("Nenhum arremate novo");
+		}
+		if (skipped > 0) {
+			message.append(imported > 0 ? " (" : ": ").append(skipped).append(" ja existente(s)")
+					.append(imported > 0 ? ")" : "");
+		}
+		message.append(documents > 0 ? "; " + documents + " documento(s) baixado(s)." : ".");
+		return new ArrematesImportResult(imported, skipped, message.toString());
 	}
 
 	private String extractDescription(Element row, String fallback) {
