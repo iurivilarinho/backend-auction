@@ -1,0 +1,29 @@
+name: deploy
+
+# Deploy automatico no VPS (goldenticket.lat) via runner self-hosted local — mesmo
+# padrao do cronos. Push na main -> sincroniza o codigo em /opt/auction/backend e
+# sobe o container auction-api (projeto compose isolado "auction", imagem auction-api).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sincroniza o codigo no servidor
+        run: |
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='.env' \
+            --exclude='docker-compose.yml' \
+            ./ /opt/auction/backend/
+
+      - name: Build e sobe o container
+        run: |
+          cd /opt/auction/backend
+          docker compose up -d --build
+          docker image prune -f
