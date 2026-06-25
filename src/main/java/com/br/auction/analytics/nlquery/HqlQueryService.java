@@ -37,18 +37,23 @@ import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.EntityType;
 
 /**
- * Assistente <b>text-to-HQL</b>: a IA gera HQL (Hibernate Query Language) sobre as
- * entidades curadas {@code Bi*} (mapeadas via {@code @Subselect}); o Hibernate
- * traduz para o dialeto do SGBD — portavel, sem SQL nativo nem view de banco. O
- * schema apresentado a IA e montado do <b>metamodelo JPA</b> em runtime. No modo
- * bypass libera qualquer entidade mapeada (somente leitura).
+ * Assistente <b>text-to-HQL</b>: a IA gera HQL (Hibernate Query Language) sobre o
+ * modelo JPA inteiro (todas as entidades reais, sem allowlist nem view de banco);
+ * o Hibernate traduz para o dialeto do SGBD — portavel, sem SQL nativo. O schema
+ * apresentado a IA e montado do <b>metamodelo JPA</b> em runtime. Sao ocultadas
+ * apenas as views auxiliares {@code Bi*} e as entidades sensiveis (segredos). A
+ * blindagem garante somente leitura ({@link HqlGuard}).
  */
 @Service
 public class HqlQueryService {
 
     private static final int MAX_ROWS = 1000;
-    /** Entidades curadas: prefixo do nome (mapeadas via @Subselect). */
-    private static final String CURATED_PREFIX = "Bi";
+    /**
+     * Entidades NAO expostas a IA: views/auxiliares (sem view, conforme pedido) e
+     * entidades que guardam segredos (chaves de IA, credenciais de integracao).
+     */
+    private static final Set<String> EXCLUDED_ENTITIES = Set.of(
+            "BiVeiculo", "BiAquisicao", "BiGasto", "BiSavedView", "AiSettings", "Credential");
 
     private final AiCompletionPort ai;
     private final ObjectMapper objectMapper;
@@ -75,9 +80,8 @@ public class HqlQueryService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe uma pergunta.");
         }
         String q = question.trim();
-        boolean bypass = aiSettingsService.global().isBypassGuard();
-        String schema = schemaText(bypass);
-        Set<String> allowed = bypass ? allEntityNames() : curatedEntityNames();
+        String schema = schemaText();
+        Set<String> allowed = allowedEntityNames();
 
         Plan plan;
         try {
@@ -124,8 +128,7 @@ public class HqlQueryService {
     }
 
     public NlQueryResponse run(String hql, ChartSpec chart, String title) {
-        Set<String> allowed = aiSettingsService.global().isBypassGuard() ? allEntityNames() : curatedEntityNames();
-        String safe = guard.sanitize(hql, allowed);
+        String safe = guard.sanitize(hql, allowedEntityNames());
         QueryResult result;
         try {
             result = execute(safe, null);
@@ -140,8 +143,7 @@ public class HqlQueryService {
     }
 
     public byte[] exportExcel(String hql) {
-        Set<String> allowed = aiSettingsService.global().isBypassGuard() ? allEntityNames() : curatedEntityNames();
-        String safe = guard.sanitize(hql, allowed);
+        String safe = guard.sanitize(hql, allowedEntityNames());
         QueryResult result = runOrBadRequest(safe);
         return buildExcel(result);
     }
@@ -186,31 +188,23 @@ public class HqlQueryService {
 
     // ------------------------------------------------------------- schema (metamodelo)
 
-    private Set<String> curatedEntityNames() {
+    /** Todas as entidades mapeadas, menos as ocultas (views Bi* e segredos). */
+    private Set<String> allowedEntityNames() {
         Set<String> names = new LinkedHashSet<>();
         for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
-            if (entity.getName().startsWith(CURATED_PREFIX)) {
+            if (!EXCLUDED_ENTITIES.contains(entity.getName())) {
                 names.add(entity.getName());
             }
         }
         return names;
     }
 
-    private Set<String> allEntityNames() {
-        Set<String> names = new LinkedHashSet<>();
-        for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
-            names.add(entity.getName());
-        }
-        return names;
-    }
-
-    /** Monta o schema (entidades + atributos) a partir do metamodelo JPA. */
-    private String schemaText(boolean bypass) {
+    /** Monta o schema (entidades + atributos) a partir do metamodelo JPA, expondo o banco inteiro. */
+    private String schemaText() {
         StringBuilder sb = new StringBuilder(
                 "Voce consulta um modelo JPA de leiloes de veiculos. Entidades disponiveis (use SO estas):\n\n");
         for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
-            boolean curated = entity.getName().startsWith(CURATED_PREFIX);
-            if (!bypass && !curated) {
+            if (EXCLUDED_ENTITIES.contains(entity.getName())) {
                 continue;
             }
             sb.append(entity.getName()).append('(');
@@ -232,31 +226,61 @@ public class HqlQueryService {
     private String systemPrompt(String schema) {
         return schema + """
 
-                Gere HQL (Hibernate Query Language), UM unico SELECT somente leitura:
+                Voce enxerga o BANCO INTEIRO e gera HQL (Hibernate Query Language), juntando as
+                entidades acima livremente pelas associacoes. UM unico SELECT somente leitura:
                 - SEMPRE projecao explicita com alias em cada coluna
-                  (ex.: SELECT v.marca AS marca, count(v) AS total).
-                - pode usar group by, order by, count/sum/avg/min/max e
-                  funcoes de data (year(current_date), month(...), etc.).
+                  (ex.: SELECT i.brand AS marca, count(i) AS total).
+                - pode usar group by, having, order by, subconsultas, count/sum/avg/min/max,
+                  funcoes de data (year(current_date), month(...)) e matematicas (cos, sin, acos, sqrt, least, greatest).
                 - HQL NAO tem LIMIT inline. Para "top N"/"os N primeiros", ordene e inclua
                   "limit": N no JSON (o sistema aplica setMaxResults).
-                - NUNCA use UPDATE/DELETE/INSERT, nem ';'.
-                - Referencia de mercado: se houver valorFipe > 0, a margem de mercado = valorFipe - lanceAtual
-                  (colunas prontas: margemFipe, margemPercentual). POREM o valorFipe normalmente e 0 (sem
-                  referencia FIPE nesta base). Nesse caso, para perguntas de RENTABILIDADE / "bom negocio" /
-                  "comprar com boa margem" / "abaixo do mercado", use como referencia de mercado a MEDIA de
-                  lanceAtual dos veiculos do MESMO modelo (ou marca+modelo+ano) e destaque os lotes ABERTOS
-                  cujo lanceAtual esta mais abaixo dessa media; economia = media_do_modelo - lanceAtual.
-                  Ex.: SELECT v.marca AS marca, v.modelo AS modelo, v.ano AS ano, v.lanceAtual AS lance,
-                       (SELECT avg(v2.lanceAtual) FROM BiVeiculo v2 WHERE v2.modelo = v.modelo) AS media_modelo,
-                       ((SELECT avg(v2.lanceAtual) FROM BiVeiculo v2 WHERE v2.modelo = v.modelo) - v.lanceAtual) AS economia,
-                       v.cidade AS cidade
-                       FROM BiVeiculo v WHERE v.statusLeilao <> 'Finalizado' AND v.lanceAtual > 0
-                       ORDER BY economia DESC  (com "limit": N).
-                - Lucro de um veiculo ja vendido = campo lucro de BiAquisicao.
-                - Status do leilao (BiVeiculo.statusLeilao): 'Publicado'/'Em Andamento' = aberto p/ lance;
-                  'Finalizado' = encerrado. Para "comprar agora", prefira nao-finalizados.
+                - NUNCA use UPDATE/DELETE/INSERT, nem ';'. NUNCA use SELECT *.
+
+                GLOSSARIO / MODELO (use exatamente assim):
+                - Veiculo/lote = AuctionItem (i): brand (marca), model (modelo), vehicleYear (ano),
+                  vehicleDescription (descricao), lotType (condicao do lote), currentBidValue (lance atual),
+                  fipeValue (valor FIPE). Pertence a um leilao por i.auction (Auction).
+                - Leilao = Auction (a): city (cidade), stateCode (UF), status, closingDate (encerramento),
+                  auctioneer (patio/leiloeiro), providerCode. Navegue do item ao leilao por i.auction (ex.: JOIN i.auction a).
+                - ABERTO x ENCERRADO: a.status — 'Finalizado' = encerrado; os demais ('Publicado'/'Em Andamento')
+                  = aberto p/ lance. Para "comprar agora"/"disponivel hoje", filtre a.status <> 'Finalizado'.
+                - CONDICAO do lote (i.lotType): ex.: CONSERVADO, SUCATA, MONTA. Para "conservado",
+                  filtre upper(i.lotType) LIKE '%CONSERV%'.
+                - ADQUIRIDO/arrematado = Acquisition (aq): aq.auctionItem (o lote), acquisitionValue (valor pago),
+                  saleValue (valor de venda), status, acquiredAt, soldAt. Gasto = AcquisitionExpense (e): e.acquisition,
+                  type, value, status. LUCRO de um veiculo vendido = aq.saleValue - aq.acquisitionValue
+                  - (SELECT coalesce(sum(e.value),0) FROM AcquisitionExpense e WHERE e.acquisition = aq).
+                - RENTABILIDADE / "bom negocio" / "abaixo do mercado": fipeValue normalmente e 0 nesta base.
+                  Use como referencia de mercado a MEDIA de currentBidValue do MESMO modelo e destaque lotes
+                  ABERTOS cujo lance esta mais abaixo dessa media; economia = media_do_modelo - currentBidValue.
+                  Ex.: SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.currentBidValue AS lance,
+                       (SELECT avg(i2.currentBidValue) FROM AuctionItem i2 WHERE i2.model = i.model) AS media_modelo
+                       FROM AuctionItem i JOIN i.auction a WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
+                       ORDER BY (media_modelo - i.currentBidValue) DESC (com "limit": N).
+                - DISTANCIA ate o ponto de partida (em km): o ponto de origem esta em DistanceSetting (ds, id=1):
+                  originLatitude/originLongitude (podem ser nulos) ou a cidade originCity/originState. As coordenadas
+                  das cidades estao em CityGeocode (g): city, state, latitude, longitude, resolved. Junte a cidade do
+                  leilao por lower(g.city)=lower(a.city) AND upper(g.state)=upper(a.stateCode) AND g.resolved=true; e a
+                  cidade de ORIGEM por lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState)
+                  AND og.resolved=true. Distancia (haversine, sem funcao radians; 0.017453292519943295 = pi/180):
+                       6371 * acos( least(1.0,
+                         cos(og.latitude*0.017453292519943295) * cos(g.latitude*0.017453292519943295)
+                         * cos((g.longitude - og.longitude)*0.017453292519943295)
+                         + sin(og.latitude*0.017453292519943295) * sin(g.latitude*0.017453292519943295) ) )
+                  Ex. "melhor veiculo conservado, bom custo-beneficio, a menos de 400 km do ponto de partida":
+                       SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.lotType AS condicao,
+                              i.currentBidValue AS lance, a.city AS cidade,
+                              (SELECT avg(i2.currentBidValue) FROM AuctionItem i2 WHERE i2.model = i.model) AS media_modelo,
+                              (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) AS distancia_km
+                       FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
+                       WHERE a = i.auction
+                         AND lower(g.city)=lower(a.city) AND upper(g.state)=upper(a.stateCode) AND g.resolved=true
+                         AND ds.id=1 AND lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState) AND og.resolved=true
+                         AND a.status <> 'Finalizado' AND upper(i.lotType) LIKE '%CONSERV%'
+                         AND (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) < 400
+                       ORDER BY distancia_km ASC (com "limit": N; ou ordene por (media_modelo - i.currentBidValue) DESC p/ priorizar economia).
                 - FILTROS DE TEXTO sempre case-insensitive: use upper()/lower(), ex.:
-                  upper(v.marca) = upper('Honda') ou lower(v.cidade) LIKE lower('%uberlandia%').
+                  upper(i.brand) = upper('Honda') ou lower(a.city) LIKE lower('%uberlandia%').
                   Os dados estao com marca/modelo em MAIUSCULAS e cidade em minusculas.
                 - Nao existe campo que separe MOTO de CARRO. Se a pergunta exigir isso, faca o melhor esforco
                   por modelos conhecidos (motos: HONDA CG/BIZ/POP/CB, YAMAHA YBR/FACTOR/FAZER, etc.; carros:
