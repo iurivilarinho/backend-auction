@@ -10,6 +10,8 @@ import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,7 @@ import com.br.auction.integration.connector.sink.SendResult;
 import com.br.auction.integration.connector.source.RecordEnvelope;
 import com.br.auction.integration.connector.source.SourceFetcher;
 import com.br.auction.integration.connector.source.SourceFetcher.FetchContext;
+import com.br.auction.integration.connector.util.FieldMapper;
 import com.br.auction.integration.connector.util.JsonPaths;
 import com.br.auction.integration.credential.Credential;
 import com.br.auction.integration.enums.FetchMode;
@@ -26,13 +29,18 @@ import com.br.auction.integration.enums.ItemStatus;
 import com.br.auction.integration.enums.RunStatus;
 import com.br.auction.integration.enums.TriggerType;
 import com.br.auction.integration.integration.Integration;
+import com.br.auction.integration.integration.IntegrationRepository;
 import com.br.auction.integration.mapping.FieldMapping;
-import com.br.auction.integration.connector.util.FieldMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Orquestra a execucao de uma integracao: coleta os registros da fonte, aplica o de->para
  * e grava nos modelos internos de destino, registrando contadores e logs por item.
+ *
+ * <p>Execucoes manuais/agendadas rodam de forma assincrona: a execucao e criada ja com
+ * status RUNNING e os contadores sao atualizados ao longo do processamento, permitindo que
+ * a lista mostre o progresso ("integrando...") em tempo real. O recebimento (inbound) roda
+ * de forma sincrona.</p>
  */
 @Service
 public class IntegrationExecutor {
@@ -41,37 +49,65 @@ public class IntegrationExecutor {
 
 	private final IntegrationRunRepository runRepository;
 	private final IntegrationItemLogRepository itemLogRepository;
+	private final IntegrationRepository integrationRepository;
 	private final ConnectorRegistry connectorRegistry;
 	private final FieldMapper fieldMapper;
 	private final InternalDestinationSender destinationSender;
 	private final ObjectMapper objectMapper;
+	private final long manualItemDelayMs;
 
 	public IntegrationExecutor(IntegrationRunRepository runRepository,
-			IntegrationItemLogRepository itemLogRepository, ConnectorRegistry connectorRegistry,
-			FieldMapper fieldMapper, InternalDestinationSender destinationSender, ObjectMapper objectMapper) {
+			IntegrationItemLogRepository itemLogRepository, IntegrationRepository integrationRepository,
+			ConnectorRegistry connectorRegistry, FieldMapper fieldMapper,
+			InternalDestinationSender destinationSender, ObjectMapper objectMapper,
+			@Value("${integration.run.manual.item-delay-ms:350}") long manualItemDelayMs) {
 		this.runRepository = runRepository;
 		this.itemLogRepository = itemLogRepository;
+		this.integrationRepository = integrationRepository;
 		this.connectorRegistry = connectorRegistry;
 		this.fieldMapper = fieldMapper;
 		this.destinationSender = destinationSender;
 		this.objectMapper = objectMapper;
+		this.manualItemDelayMs = manualItemDelayMs;
 	}
 
+	/**
+	 * Abre uma execucao com status RUNNING e a persiste imediatamente, para que ela ja
+	 * apareca como "em execucao" antes do processamento comecar.
+	 */
 	@Transactional
-	public IntegrationRun execute(Integration integration, TriggerType triggerType) {
-		IntegrationRun run = openRun(integration, triggerType);
+	public IntegrationRun startRun(Integration integration, TriggerType triggerType) {
+		return openRun(integration, triggerType);
+	}
+
+	/**
+	 * Processa a execucao de forma assincrona (coleta da fonte + de->para + gravacao),
+	 * atualizando os contadores ao longo do caminho.
+	 */
+	@Async
+	public void executeRunAsync(Long runId, boolean paced) {
+		IntegrationRun run = runRepository.findById(runId).orElse(null);
+		if (run == null) {
+			return;
+		}
+		Integration integration = integrationRepository.findForExecutionById(run.getIntegration().getId()).orElse(null);
+		if (integration == null) {
+			run.setStatus(RunStatus.FAILED);
+			run.setErrorMessage("Integracao nao encontrada");
+			finish(run);
+			return;
+		}
 		ExecutionState state = new ExecutionState(integration.getWatermarkValue());
 		try {
 			SourceFetcher fetcher = connectorRegistry.resolveFetcher(integration.getSourceModel().getConnectorType());
 			FetchContext context = new FetchContext(integration.getSource(), integration.getSourceModel(),
 					resolveCredential(integration), integration.getWatermarkValue(),
 					integration.getBatchSize() == null ? 100 : integration.getBatchSize());
-			fetcher.fetch(context, batch -> processBatch(run, integration, batch, state));
+			fetcher.fetch(context, batch -> processBatch(run, integration, batch, state, paced));
 			closeRun(run, state, integration);
 		} catch (RuntimeException ex) {
 			failRun(run, state, ex);
 		}
-		return run;
 	}
 
 	@Transactional
@@ -80,8 +116,7 @@ public class IntegrationExecutor {
 		IntegrationRun run = openRun(integration, triggerType);
 		ExecutionState state = new ExecutionState(integration.getWatermarkValue());
 		try {
-			List<RecordEnvelope> batch = toEnvelopes(integration, records);
-			processBatch(run, integration, batch, state);
+			processBatch(run, integration, toEnvelopes(integration, records), state, false);
 			closeRun(run, state, integration);
 		} catch (RuntimeException ex) {
 			failRun(run, state, ex);
@@ -90,9 +125,10 @@ public class IntegrationExecutor {
 	}
 
 	private void processBatch(IntegrationRun run, Integration integration, List<RecordEnvelope> batch,
-			ExecutionState state) {
+			ExecutionState state, boolean paced) {
 		List<FieldMapping> mappings = integration.getFieldMappings();
 		for (RecordEnvelope envelope : batch) {
+			pace(paced);
 			long startedAt = System.currentTimeMillis();
 			IntegrationItemLog log = new IntegrationItemLog();
 			log.setRun(run);
@@ -104,6 +140,7 @@ public class IntegrationExecutor {
 				if (envelope.businessKey() != null && !state.seenKeys.add(envelope.businessKey())) {
 					finishItem(log, ItemStatus.SKIPPED, "Registro duplicado no lote/execucao", startedAt);
 					state.skipped++;
+					updateProgress(run, state);
 					continue;
 				}
 				Map<String, Object> mapped = fieldMapper.map(envelope.payload(), mappings);
@@ -122,7 +159,24 @@ public class IntegrationExecutor {
 				finishItem(log, ItemStatus.FAILED, ex.getMessage(), startedAt);
 				state.failure++;
 			}
+			updateProgress(run, state);
 		}
+	}
+
+	private void pace(boolean paced) {
+		if (!paced || manualItemDelayMs <= 0) {
+			return;
+		}
+		try {
+			Thread.sleep(manualItemDelayMs);
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	private void updateProgress(IntegrationRun run, ExecutionState state) {
+		applyCounters(run, state);
+		runRepository.save(run);
 	}
 
 	private void finishItem(IntegrationItemLog log, ItemStatus status, String error, long startedAt) {
@@ -175,6 +229,7 @@ public class IntegrationExecutor {
 		finish(run);
 		if (integration.getFetchMode() == FetchMode.INCREMENTAL && state.maxWatermark != null) {
 			integration.setWatermarkValue(state.maxWatermark);
+			integrationRepository.save(integration);
 		}
 		LOG.info("Execucao {} da integracao {} finalizada: status={} total={} sucesso={} falha={} ignorado={}",
 				run.getId(), integration.getCode(), status, state.total, state.success, state.failure, state.skipped);

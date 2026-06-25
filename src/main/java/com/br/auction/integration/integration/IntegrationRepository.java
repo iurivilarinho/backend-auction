@@ -6,6 +6,8 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface IntegrationRepository
 		extends JpaRepository<Integration, Long>, JpaSpecificationExecutor<Integration> {
@@ -16,6 +18,13 @@ public interface IntegrationRepository
 
 	@EntityGraph(attributePaths = "fieldMappings")
 	Optional<Integration> findWithMappingsById(Long id);
+
+	/**
+	 * Carrega a integracao com os mapeamentos e inicializa as associacoes EAGER (fonte,
+	 * modelo da fonte e credencial) para uso fora de transacao (execucao assincrona).
+	 */
+	@Query("select distinct i from Integration i left join fetch i.fieldMappings where i.id = :id")
+	Optional<Integration> findForExecutionById(@Param("id") Long id);
 
 	Optional<Integration> findByCode(String code);
 

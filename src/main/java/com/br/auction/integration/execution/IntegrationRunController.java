@@ -33,6 +33,16 @@ public class IntegrationRunController {
 		return ResponseEntity.ok(page);
 	}
 
+	@Operation(summary = "Listar execucoes em andamento", description = "Retorna todas as execucoes com status RUNNING (para indicar integracoes em andamento na lista).")
+	@ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
+	@GetMapping("/runs/running")
+	public ResponseEntity<java.util.List<IntegrationRunResponse>> findRunning() {
+		java.util.List<IntegrationRunResponse> running = service.findRunningRuns().stream()
+				.map(IntegrationRunResponse::new)
+				.toList();
+		return ResponseEntity.ok(running);
+	}
+
 	@Operation(summary = "Buscar execucao por ID")
 	@ApiResponse(responseCode = "200", description = "Execucao encontrada")
 	@ApiResponse(responseCode = "404", description = "Execucao nao encontrada")

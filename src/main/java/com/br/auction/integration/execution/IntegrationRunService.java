@@ -8,6 +8,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import com.br.auction.integration.enums.RunStatus;
 import com.br.auction.integration.enums.TriggerType;
 import com.br.auction.integration.integration.Integration;
 import com.br.auction.integration.integration.IntegrationService;
@@ -41,7 +42,15 @@ public class IntegrationRunService {
 	public IntegrationRun triggerManually(Long integrationId) {
 		Integration integration = integrationService.findById(integrationId);
 		validateExecutable(integration);
-		return executor.execute(integration, TriggerType.MANUAL);
+		// Abre a execucao ja como RUNNING e processa em segundo plano: a lista mostra o
+		// progresso ("integrando...") enquanto a execucao acontece.
+		IntegrationRun run = executor.startRun(integration, TriggerType.MANUAL);
+		executor.executeRunAsync(run.getId(), true);
+		return run;
+	}
+
+	public List<IntegrationRun> findRunningRuns() {
+		return runRepository.findByStatusOrderByStartedAtDesc(RunStatus.RUNNING);
 	}
 
 	public IntegrationRun receiveInbound(String code, Object body) {

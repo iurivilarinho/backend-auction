@@ -42,14 +42,17 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 	private final SourceModelRepository sourceModelRepository;
 	private final IntegrationRepository integrationRepository;
 	private final boolean seedEnabled;
+	private final String selfUrl;
 
 	public IntegrationSeedRunner(IntegrationSourceRepository sourceRepository,
 			SourceModelRepository sourceModelRepository, IntegrationRepository integrationRepository,
-			@Value("${integration.seed.enabled:true}") boolean seedEnabled) {
+			@Value("${integration.seed.enabled:true}") boolean seedEnabled,
+			@Value("${app.self-url:http://localhost:8087}") String selfUrl) {
 		this.sourceRepository = sourceRepository;
 		this.sourceModelRepository = sourceModelRepository;
 		this.integrationRepository = integrationRepository;
 		this.seedEnabled = seedEnabled;
+		this.selfUrl = selfUrl;
 	}
 
 	@Override
@@ -70,6 +73,14 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 
 		integrationRepository.save(buildAuctionIntegration(provider, source, auctionModel));
 		integrationRepository.save(buildLotIntegration(provider, source, lotModel));
+
+		// Integracao de coleta (pull) de exemplo: consome um feed JSON paginado do proprio
+		// backend, permitindo executar manualmente e acompanhar o progresso "integrando...".
+		IntegrationSource feedSource = sourceRepository.findByCode("DEMO_FEED")
+				.orElseGet(() -> sourceRepository.save(buildFeedSource(provider)));
+		SourceModel feedModel = sourceModelRepository.findByCode("DEMO_AUCTIONS_FEED")
+				.orElseGet(() -> sourceModelRepository.save(buildFeedModel()));
+		integrationRepository.save(buildFeedIntegration(feedSource, feedModel));
 
 		LOG.info("Integracao com o provedor {} cadastrada automaticamente (seed inicial).", provider.getCode());
 	}
@@ -185,6 +196,69 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "vehicleDescription", "vehicleDescription", null, false, 4);
 		addMapping(integration, "currentBidValue", "currentBidValue", "MONEY_BR", false, 5);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 6);
+		return integration;
+	}
+
+	private IntegrationSource buildFeedSource(AuctionProvider provider) {
+		IntegrationSource source = new IntegrationSource();
+		source.setCode("DEMO_FEED");
+		source.setName("Provedor de exemplo (feed JSON)");
+		source.setDescription("Feed REST paginado do proprio backend para demonstrar a coleta (pull)");
+		source.setConnectorType(ConnectorType.REST);
+		source.setBaseUrl(selfUrl);
+		source.setProviderCode(provider.getCode());
+		source.setProviderName(provider.getName());
+		source.setStateCode(provider.getStateCode());
+		source.setStateName(provider.getStateName());
+		source.setActive(Boolean.TRUE);
+		return source;
+	}
+
+	private SourceModel buildFeedModel() {
+		SourceModel model = new SourceModel();
+		model.setCode("DEMO_AUCTIONS_FEED");
+		model.setName("Leiloes do feed de exemplo");
+		model.setDescription("Estrutura paginada {items, hasNext} do feed de exemplo");
+		model.setConnectorType(ConnectorType.REST);
+		model.setResourcePath("api/sample/provider/auctions");
+		model.setItemsJsonPath("items");
+		model.setHasNextJsonPath("hasNext");
+		model.setPageParamName("page");
+		model.setPageSizeParamName("pageSize");
+		model.setPageSize(4);
+		model.setSourceMethod(SourceMethod.GET);
+		model.setBusinessKeyField("auctionId");
+		addField(model, "auctionId", "ID do leilao", FieldDataType.STRING, true);
+		addField(model, "auctionNoticeNumber", "Numero do edital", FieldDataType.STRING, false);
+		addField(model, "city", "Cidade", FieldDataType.STRING, false);
+		addField(model, "auctioneer", "Patio/Leiloeiro", FieldDataType.STRING, false);
+		addField(model, "status", "Status", FieldDataType.STRING, false);
+		addField(model, "closingDate", "Data de encerramento", FieldDataType.STRING, false);
+		addField(model, "auctionYear", "Ano", FieldDataType.STRING, false);
+		addField(model, "sourceUrl", "URL", FieldDataType.STRING, false);
+		return model;
+	}
+
+	private Integration buildFeedIntegration(IntegrationSource source, SourceModel model) {
+		Integration integration = new Integration();
+		integration.setCode("DEMO_AUCTIONS_SYNC");
+		integration.setName("Sincronizar leiloes (exemplo)");
+		integration.setDescription("Coleta leiloes do feed de exemplo e grava no modelo interno Auction");
+		integration.setSource(source);
+		integration.setSourceModel(model);
+		integration.setTargetModel(InternalTargetModel.AUCTION);
+		integration.setTriggerMode(TriggerMode.MANUAL);
+		integration.setFetchMode(FetchMode.FULL);
+		integration.setStatus(IntegrationStatus.ACTIVE);
+		integration.setActive(Boolean.TRUE);
+		addMapping(integration, "auctionId", "detranAuctionId", null, true, 0);
+		addMapping(integration, "auctionNoticeNumber", "auctionNoticeNumber", null, false, 1);
+		addMapping(integration, "city", "city", null, false, 2);
+		addMapping(integration, "auctioneer", "auctioneer", null, false, 3);
+		addMapping(integration, "status", "status", null, false, 4);
+		addMapping(integration, "closingDate", "closingDate", null, false, 5);
+		addMapping(integration, "auctionYear", "auctionYear", null, false, 6);
+		addMapping(integration, "sourceUrl", "sourceUrl", null, false, 7);
 		return integration;
 	}
 

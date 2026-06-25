@@ -1,10 +1,13 @@
 package com.br.auction.integration.execution;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+
+import com.br.auction.integration.enums.RunStatus;
 
 public interface IntegrationRunRepository extends JpaRepository<IntegrationRun, Long> {
 
@@ -12,5 +15,7 @@ public interface IntegrationRunRepository extends JpaRepository<IntegrationRun, 
 
 	Optional<IntegrationRun> findTopByIntegrationIdOrderByStartedAtDesc(Long integrationId);
 
-	long countByStatus(com.br.auction.integration.enums.RunStatus status);
+	List<IntegrationRun> findByStatusOrderByStartedAtDesc(RunStatus status);
+
+	long countByStatus(RunStatus status);
 }
