@@ -1,0 +1,91 @@
+package com.br.auction.integration.execution;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+
+import com.br.auction.integration.enums.TriggerType;
+import com.br.auction.integration.integration.Integration;
+import com.br.auction.integration.integration.IntegrationService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import jakarta.persistence.EntityNotFoundException;
+
+/**
+ * Orquestra disparos e consultas de execucoes de integracao.
+ */
+@Service
+public class IntegrationRunService {
+
+	private final IntegrationService integrationService;
+	private final IntegrationExecutor executor;
+	private final IntegrationRunRepository runRepository;
+	private final IntegrationItemLogRepository itemLogRepository;
+	private final ObjectMapper objectMapper;
+
+	public IntegrationRunService(IntegrationService integrationService, IntegrationExecutor executor,
+			IntegrationRunRepository runRepository, IntegrationItemLogRepository itemLogRepository,
+			ObjectMapper objectMapper) {
+		this.integrationService = integrationService;
+		this.executor = executor;
+		this.runRepository = runRepository;
+		this.itemLogRepository = itemLogRepository;
+		this.objectMapper = objectMapper;
+	}
+
+	public IntegrationRun triggerManually(Long integrationId) {
+		Integration integration = integrationService.findById(integrationId);
+		validateExecutable(integration);
+		return executor.execute(integration, TriggerType.MANUAL);
+	}
+
+	public IntegrationRun receiveInbound(String code, Object body) {
+		Integration integration = integrationService.findByCode(code);
+		List<Map<String, Object>> records = toRecords(body);
+		return executor.executeInbound(integration, records, TriggerType.INBOUND);
+	}
+
+	public Page<IntegrationRun> findByIntegration(Long integrationId, Pageable pageable) {
+		return runRepository.findByIntegrationId(integrationId, pageable);
+	}
+
+	public IntegrationRun findRun(Long runId) {
+		return runRepository.findById(runId)
+				.orElseThrow(() -> new EntityNotFoundException("Execucao nao encontrada: " + runId));
+	}
+
+	public Page<IntegrationItemLog> findRunItems(Long runId, Pageable pageable) {
+		return itemLogRepository.findByRunId(runId, pageable);
+	}
+
+	private void validateExecutable(Integration integration) {
+		if (integration.getSource() == null || integration.getSourceModel() == null) {
+			throw new IllegalArgumentException("Integracao sem fonte ou modelo da fonte configurados");
+		}
+		if (integration.getFieldMappings() == null || integration.getFieldMappings().isEmpty()) {
+			throw new IllegalArgumentException("Integracao sem regras de de->para configuradas");
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private List<Map<String, Object>> toRecords(Object body) {
+		if (body == null) {
+			return List.of();
+		}
+		if (body instanceof List<?> list) {
+			List<Map<String, Object>> records = new ArrayList<>(list.size());
+			for (Object element : list) {
+				records.add(objectMapper.convertValue(element, new TypeReference<Map<String, Object>>() {
+				}));
+			}
+			return records;
+		}
+		return List.of(objectMapper.convertValue(body, new TypeReference<Map<String, Object>>() {
+		}));
+	}
+}
