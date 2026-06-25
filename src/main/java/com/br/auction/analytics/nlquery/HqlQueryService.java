@@ -47,6 +47,7 @@ import jakarta.persistence.metamodel.EntityType;
 @Service
 public class HqlQueryService {
 
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(HqlQueryService.class);
     private static final int MAX_ROWS = 1000;
     /**
      * Entidades NAO expostas a IA: views/auxiliares (sem view, conforme pedido) e
@@ -112,6 +113,7 @@ public class HqlQueryService {
             String safe = guard.sanitize(plan.hql, allowed);
             return new Outcome(safe, execute(safe, plan.limit), plan);
         } catch (RuntimeException first) {
+            LOG.warn("HQL gerado falhou (tentativa 1): {} -- HQL: {}", describe(first), plan.hql);
             try {
                 Plan fixed = parse(ai.complete(systemPrompt(schema), "O pedido foi: " + question
                         + "\nO HQL abaixo falhou: " + describe(first) + "\nHQL:\n" + plan.hql
@@ -122,6 +124,7 @@ public class HqlQueryService {
                 String safe = guard.sanitize(fixed.hql, allowed);
                 return new Outcome(safe, execute(safe, fixed.limit), fixed);
             } catch (RuntimeException second) {
+                LOG.warn("HQL corrigido tambem falhou (tentativa 2): {}", describe(second));
                 return null;
             }
         }
