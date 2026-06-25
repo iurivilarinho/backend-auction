@@ -1,5 +1,8 @@
 package com.br.auction.integration.execution;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -86,10 +89,10 @@ public class IntegrationRunService {
 
 	private void validateExecutable(Integration integration) {
 		if (integration.getSource() == null || integration.getSourceModel() == null) {
-			throw new IllegalArgumentException("Integracao sem fonte ou modelo da fonte configurados");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Integracao sem fonte ou modelo da fonte configurados");
 		}
 		if (integration.getFieldMappings() == null || integration.getFieldMappings().isEmpty()) {
-			throw new IllegalArgumentException("Integracao sem regras de de->para configuradas");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Integracao sem regras de de->para configuradas");
 		}
 	}
 

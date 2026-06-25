@@ -1,5 +1,8 @@
 package com.br.auction.integration.connector.util;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -38,7 +41,7 @@ public class FieldMapper {
 				raw = mapping.getDefaultValue();
 			}
 			if (raw == null && Boolean.TRUE.equals(mapping.getRequired())) {
-				throw new IllegalArgumentException(
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
 						"Campo obrigatorio ausente: " + mapping.getSourceField() + " -> " + mapping.getTargetField());
 			}
 			Object transformed = applyTransform(raw, mapping.getTransform(), source);

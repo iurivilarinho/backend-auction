@@ -1,5 +1,8 @@
 package com.br.auction.integration.connector;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +30,7 @@ public class ConnectorRegistry {
 	public SourceFetcher resolveFetcher(ConnectorType type) {
 		SourceFetcher fetcher = fetchers.get(type);
 		if (fetcher == null) {
-			throw new IllegalArgumentException("Conector de coleta nao suportado: " + type);
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Conector de coleta nao suportado: " + type);
 		}
 		return fetcher;
 	}

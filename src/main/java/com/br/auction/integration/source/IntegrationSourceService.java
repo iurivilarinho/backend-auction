@@ -1,5 +1,8 @@
 package com.br.auction.integration.source;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -35,7 +38,7 @@ public class IntegrationSourceService {
 	@Transactional
 	public IntegrationSource create(IntegrationSourceRequest request) {
 		if (repository.existsByCode(request.getCode())) {
-			throw new IllegalArgumentException("Ja existe uma fonte com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe uma fonte com o codigo " + request.getCode());
 		}
 		IntegrationSource source = new IntegrationSource();
 		apply(source, request);
@@ -46,7 +49,7 @@ public class IntegrationSourceService {
 	public IntegrationSource update(Long id, IntegrationSourceRequest request) {
 		IntegrationSource source = findById(id);
 		if (repository.existsByCodeAndIdNot(request.getCode(), id)) {
-			throw new IllegalArgumentException("Ja existe uma fonte com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe uma fonte com o codigo " + request.getCode());
 		}
 		apply(source, request);
 		return repository.save(source);
@@ -85,10 +88,10 @@ public class IntegrationSourceService {
 
 	private void validateConnectorFields(IntegrationSourceRequest request) {
 		if (request.getConnectorType() == ConnectorType.REST && isBlank(request.getBaseUrl())) {
-			throw new IllegalArgumentException("A URL base e obrigatoria para fontes REST");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A URL base e obrigatoria para fontes REST");
 		}
 		if (request.getConnectorType() == ConnectorType.JDBC && isBlank(request.getJdbcUrl())) {
-			throw new IllegalArgumentException("A URL JDBC e obrigatoria para fontes JDBC");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "A URL JDBC e obrigatoria para fontes JDBC");
 		}
 	}
 

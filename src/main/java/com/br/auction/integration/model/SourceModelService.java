@@ -1,5 +1,8 @@
 package com.br.auction.integration.model;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -29,7 +32,7 @@ public class SourceModelService {
 	@Transactional
 	public SourceModel create(SourceModelRequest request) {
 		if (repository.existsByCode(request.getCode())) {
-			throw new IllegalArgumentException("Ja existe um modelo da fonte com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe um modelo da fonte com o codigo " + request.getCode());
 		}
 		SourceModel model = new SourceModel();
 		apply(model, request);
@@ -40,7 +43,7 @@ public class SourceModelService {
 	public SourceModel update(Long id, SourceModelRequest request) {
 		SourceModel model = findById(id);
 		if (repository.existsByCodeAndIdNot(request.getCode(), id)) {
-			throw new IllegalArgumentException("Ja existe um modelo da fonte com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe um modelo da fonte com o codigo " + request.getCode());
 		}
 		apply(model, request);
 		return repository.save(model);

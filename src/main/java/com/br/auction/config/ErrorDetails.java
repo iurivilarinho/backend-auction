@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.ConstraintViolationException;
@@ -82,6 +83,13 @@ public class ErrorDetails {
 		List<String> errors = new ArrayList<>();
 		ex.getConstraintViolations().forEach(v -> errors.add(v.getPropertyPath() + ": " + v.getMessage()));
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new ErrorResponse(errors));
+	}
+
+	// Exceptions que ja carregam um status HTTP (ex.: BAD_REQUEST/NOT_FOUND/FORBIDDEN dos services).
+	@ExceptionHandler(ResponseStatusException.class)
+	public ResponseEntity<ErrorResponse> tratarResponseStatus(ResponseStatusException ex) {
+		String msg = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+		return ResponseEntity.status(ex.getStatusCode()).body(new ErrorResponse(List.of(msg)));
 	}
 
 	// Opcional, mas util para padronizar respostas 500.

@@ -1,5 +1,8 @@
 package com.br.auction.integration.integration;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -60,7 +63,7 @@ public class IntegrationService {
 	@Transactional
 	public Integration create(IntegrationRequest request) {
 		if (repository.existsByCode(request.getCode())) {
-			throw new IllegalArgumentException("Ja existe uma integracao com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe uma integracao com o codigo " + request.getCode());
 		}
 		Integration integration = new Integration();
 		apply(integration, request);
@@ -71,7 +74,7 @@ public class IntegrationService {
 	public Integration update(Long id, IntegrationRequest request) {
 		Integration integration = findById(id);
 		if (repository.existsByCodeAndIdNot(request.getCode(), id)) {
-			throw new IllegalArgumentException("Ja existe uma integracao com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe uma integracao com o codigo " + request.getCode());
 		}
 		apply(integration, request);
 		return repository.save(integration);
@@ -85,7 +88,7 @@ public class IntegrationService {
 			return integration;
 		}
 		if (current == null || !current.canTransitionTo(target)) {
-			throw new IllegalArgumentException(
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, 
 					"Transicao de status invalida: " + current + " -> " + target);
 		}
 		integration.setStatus(target);

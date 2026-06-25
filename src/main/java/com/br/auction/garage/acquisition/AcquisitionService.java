@@ -1,5 +1,8 @@
 package com.br.auction.garage.acquisition;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.HashSet;
@@ -68,7 +71,7 @@ public class AcquisitionService {
 					() -> new EntityNotFoundException("Veiculo nao encontrado: " + request.getAuctionItemId()));
 			acquisition.setAuctionItem(item);
 		} else if (request.getVehicleDescription() == null || request.getVehicleDescription().isBlank()) {
-			throw new IllegalArgumentException("Informe o veiculo (auctionItemId) ou a descricao do veiculo");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o veiculo (auctionItemId) ou a descricao do veiculo");
 		}
 		acquisition.setVehicleDescription(request.getVehicleDescription());
 		acquisition.setLotReference(request.getLotReference());
@@ -134,7 +137,7 @@ public class AcquisitionService {
 			}
 		} else {
 			if (request.getValue() == null) {
-				throw new IllegalArgumentException("Informe o valor ou ao menos um orcamento");
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Informe o valor ou ao menos um orcamento");
 			}
 			expense.setStatus(ExpenseStatus.COMPRADO);
 			expense.setValue(request.getValue());

@@ -1,5 +1,8 @@
 package com.br.auction.integration.credential;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -29,7 +32,7 @@ public class CredentialService {
 	@Transactional
 	public Credential create(CredentialRequest request) {
 		if (repository.existsByCode(request.getCode())) {
-			throw new IllegalArgumentException("Ja existe uma credencial com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe uma credencial com o codigo " + request.getCode());
 		}
 		Credential credential = new Credential();
 		apply(credential, request);
@@ -40,7 +43,7 @@ public class CredentialService {
 	public Credential update(Long id, CredentialRequest request) {
 		Credential credential = findById(id);
 		if (repository.existsByCodeAndIdNot(request.getCode(), id)) {
-			throw new IllegalArgumentException("Ja existe uma credencial com o codigo " + request.getCode());
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Ja existe uma credencial com o codigo " + request.getCode());
 		}
 		apply(credential, request);
 		return repository.save(credential);

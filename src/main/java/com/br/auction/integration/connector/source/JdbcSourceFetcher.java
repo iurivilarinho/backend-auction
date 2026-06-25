@@ -1,5 +1,8 @@
 package com.br.auction.integration.connector.source;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
@@ -42,7 +45,7 @@ public class JdbcSourceFetcher implements SourceFetcher {
 				? model.getTableName()
 				: model.getResourcePath();
 		if (table == null || table.isBlank()) {
-			throw new IllegalArgumentException("Modelo da fonte JDBC sem tabela/recurso definido");
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Modelo da fonte JDBC sem tabela/recurso definido");
 		}
 
 		String sql = buildSql(table, model, context.watermarkValue());
