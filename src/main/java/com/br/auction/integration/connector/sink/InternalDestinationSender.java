@@ -17,6 +17,7 @@ import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.repository.AuctionRepository;
+import com.br.auction.service.EditalService;
 import com.br.auction.response.VehicleInfo;
 import com.br.auction.service.ImageStorageService;
 import com.br.auction.service.VehicleParserService;
@@ -37,14 +38,16 @@ public class InternalDestinationSender {
 	private final AuctionItemRepository auctionItemRepository;
 	private final ImageStorageService imageStorageService;
 	private final VehicleParserService vehicleParserService;
+	private final EditalService editalService;
 
 	public InternalDestinationSender(AuctionRepository auctionRepository,
 			AuctionItemRepository auctionItemRepository, ImageStorageService imageStorageService,
-			VehicleParserService vehicleParserService) {
+			VehicleParserService vehicleParserService, EditalService editalService) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
 		this.imageStorageService = imageStorageService;
 		this.vehicleParserService = vehicleParserService;
+		this.editalService = editalService;
 	}
 
 	/**
@@ -85,6 +88,9 @@ public class InternalDestinationSender {
 		auction.setProviderName(resolveProviderName(source));
 		auction.setStateCode(source == null ? null : source.getStateCode());
 		auction.setStateName(source == null ? null : source.getStateName());
+
+		// Ja traz o edital (PDF publico) para a base na importacao; best-effort, nao quebra o item.
+		editalService.populate(auction);
 
 		auctionRepository.save(auction);
 		return isNew ? SendResult.created() : SendResult.updated();

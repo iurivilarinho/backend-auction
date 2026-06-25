@@ -35,14 +35,29 @@ public class AuctionService {
 	private final AuctionRepository auctionRepository;
 	private final AuctionItemRepository auctionItemRepository;
 	private final FipeService fipeService;
+	private final EditalService editalService;
 	private final EntityManager entityManager;
 
 	public AuctionService(AuctionRepository auctionRepository, AuctionItemRepository auctionItemRepository,
-			FipeService fipeService, EntityManager entityManager) {
+			FipeService fipeService, EditalService editalService, EntityManager entityManager) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
 		this.fipeService = fipeService;
+		this.editalService = editalService;
 		this.entityManager = entityManager;
+	}
+
+	/**
+	 * Devolve o edital do leilao guardado na base; se ainda nao houver, baixa do DETRAN
+	 * (PDF publico), guarda e devolve. {@code null} quando o leilao nao tem edital disponivel.
+	 */
+	@Transactional
+	public Auction getOrFetchEdital(Long auctionId) {
+		Auction auction = findById(auctionId);
+		if (!auction.hasEdital() && editalService.populate(auction)) {
+			auctionRepository.save(auction);
+		}
+		return auction.hasEdital() ? auction : null;
 	}
 
 	@Transactional(readOnly = true)

@@ -11,6 +11,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
@@ -72,12 +73,53 @@ public class Auction {
 	@Schema(description = "URL publica do leilao no provedor")
 	private String sourceUrl;
 
+	@Column(length = 200)
+	@Schema(description = "Nome do arquivo do edital baixado")
+	private String editalFileName;
+
+	@Column(length = 100)
+	@Schema(description = "Content-type do edital baixado")
+	private String editalContentType;
+
+	@Lob
+	@Column(name = "editalData")
+	@Schema(description = "PDF do edital (base64) guardado na base para ficar disponivel offline")
+	private String editalData;
+
 	@OneToMany(mappedBy = "auction", cascade = CascadeType.ALL)
 	@Schema(description = "Lista de veiculos pertencentes ao leilao")
 	private List<AuctionItem> items = new ArrayList<>();
 
 	public Long getId() {
 		return id;
+	}
+
+	public String getEditalFileName() {
+		return editalFileName;
+	}
+
+	public void setEditalFileName(String editalFileName) {
+		this.editalFileName = editalFileName;
+	}
+
+	public String getEditalContentType() {
+		return editalContentType;
+	}
+
+	public void setEditalContentType(String editalContentType) {
+		this.editalContentType = editalContentType;
+	}
+
+	public byte[] getEditalBytes() {
+		return editalData == null ? new byte[0] : java.util.Base64.getDecoder().decode(editalData);
+	}
+
+	public void setEditalBytes(byte[] bytes) {
+		this.editalData = bytes == null ? null : java.util.Base64.getEncoder().encodeToString(bytes);
+	}
+
+	public boolean hasEdital() {
+		return editalData != null && !editalData.isBlank();
 	}
 
 	public String getAuctionNoticeNumber() {

@@ -8,6 +8,7 @@ import java.util.List;
 import org.springframework.core.env.Environment;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -127,6 +128,26 @@ public class AuctionController {
 	public ResponseEntity<AuctionResponse> findById(@PathVariable Long auctionId) {
 		Auction auction = auctionService.findById(auctionId);
 		return ResponseEntity.ok(new AuctionResponse(auction));
+	}
+
+	@Operation(summary = "Baixar edital do leilao", description = "Devolve o PDF do edital guardado na base; se ainda nao houver, baixa do DETRAN, guarda e devolve.")
+	@ApiResponse(responseCode = "200", description = "PDF do edital")
+	@ApiResponse(responseCode = "404", description = "Edital nao disponivel para este leilao")
+	@GetMapping("/auctions/{auctionId}/edital/download")
+	public ResponseEntity<byte[]> downloadEdital(@PathVariable Long auctionId) {
+		Auction auction = auctionService.getOrFetchEdital(auctionId);
+		if (auction == null) {
+			return ResponseEntity.notFound().build();
+		}
+		String fileName = auction.getEditalFileName() != null ? auction.getEditalFileName()
+				: "edital-" + auctionId + ".pdf";
+		MediaType mediaType = auction.getEditalContentType() == null ? MediaType.APPLICATION_PDF
+				: MediaType.parseMediaType(auction.getEditalContentType());
+		return ResponseEntity.ok()
+				.header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+						"inline; filename=\"" + fileName + "\"")
+				.contentType(mediaType)
+				.body(auction.getEditalBytes());
 	}
 
 	@Operation(summary = "Listar itens de leilao", description = "Retorna itens de leilao persistidos no backend, com filtros especializados (marca, ano, modelo, faixas de lance/FIPE) alem da busca textual.")

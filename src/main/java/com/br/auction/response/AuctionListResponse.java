@@ -61,6 +61,12 @@ public class AuctionListResponse {
 	@Schema(description = "Distancia em km entre a origem configurada e a cidade do leilao (null quando ainda nao geocodificada)")
 	private Double distanceKm;
 
+	@Schema(description = "Indica se o edital ja esta guardado na base")
+	private boolean editalAvailable;
+
+	@Schema(description = "URL para baixar/abrir o edital do leilao")
+	private String editalUrl;
+
 	public AuctionListResponse(Auction auction) {
 		this.id = auction.getId();
 		this.auctionNoticeNumber = auction.getAuctionNoticeNumber();
@@ -78,6 +84,16 @@ public class AuctionListResponse {
 		this.stateName = auction.getStateName();
 		this.sourceUrl = auction.getSourceUrl();
 		this.itemCount = auction.getItems() == null ? 0 : auction.getItems().size();
+		this.editalAvailable = auction.hasEdital();
+		this.editalUrl = "/api/auctions/" + auction.getId() + "/edital/download";
+	}
+
+	public boolean isEditalAvailable() {
+		return editalAvailable;
+	}
+
+	public String getEditalUrl() {
+		return editalUrl;
 	}
 
 	public Long getId() {
