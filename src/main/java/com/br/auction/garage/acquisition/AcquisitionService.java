@@ -273,6 +273,25 @@ public class AcquisitionService {
 		return new ArrematesImportResult(imported, skipped, message);
 	}
 
+	/**
+	 * Importa os arremates automaticamente: faz login no painel com o perfil salvo (arrematante),
+	 * baixa o HTML da pagina /arremates e reaproveita o mesmo parser do fluxo manual. Se o login
+	 * automatico falhar, retorna a mensagem do painel para que o usuario possa colar o HTML.
+	 */
+	@Transactional
+	public ArrematesImportResult importArrematesAutomatically() {
+		DetranPanelService.FetchResult fetch = detranPanelService.fetchArrematesHtml();
+		if (!fetch.success() || fetch.html() == null || fetch.html().isBlank()) {
+			return new ArrematesImportResult(0, 0, fetch.message());
+		}
+		ArrematesImportResult result = importArremates(fetch.html());
+		if (result.imported() == 0 && result.skipped() == 0) {
+			return new ArrematesImportResult(0, 0,
+					"Login no painel realizado, mas nenhum arremate foi reconhecido. Se necessario, cole o HTML manualmente.");
+		}
+		return result;
+	}
+
 	private String extractDescription(Element row, String fallback) {
 		for (String selector : List.of("b", "strong", ".titulo", ".descricao", "td", "h5", "h6")) {
 			Element element = row.selectFirst(selector);

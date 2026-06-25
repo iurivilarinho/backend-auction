@@ -78,10 +78,17 @@ public class AcquisitionController {
 		return ResponseEntity.status(HttpStatus.CREATED).body(new AcquisitionResponse(service.create(request)));
 	}
 
-	@Operation(summary = "Importar arremates do painel", description = "Importa os arremates a partir do HTML da pagina /arremates (logado).")
+	@Operation(summary = "Importar arremates do painel (colando HTML)", description = "Importa os arremates a partir do HTML da pagina /arremates (logado).")
 	@PostMapping("/import")
 	public ResponseEntity<ArrematesImportResult> importArremates(@RequestBody ArrematesImportRequest request) {
 		return ResponseEntity.ok(service.importArremates(request.getHtml()));
+	}
+
+	@Operation(summary = "Importar arremates automaticamente", description = "Faz login no painel do provedor com o perfil salvo (arrematante), baixa a pagina /arremates e importa os veiculos adquiridos. Se o login automatico falhar, retorna instrucao para colar o HTML manualmente.")
+	@ApiResponse(responseCode = "200", description = "Importacao concluida (ou instrucao de fallback)")
+	@PostMapping("/import-auto")
+	public ResponseEntity<ArrematesImportResult> importArrematesAuto() {
+		return ResponseEntity.ok(service.importArrematesAutomatically());
 	}
 
 	@Operation(summary = "Atualizar veiculo adquirido")

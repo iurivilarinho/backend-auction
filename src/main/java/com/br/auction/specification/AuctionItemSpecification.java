@@ -31,6 +31,19 @@ public class AuctionItemSpecification {
 				.in(status.stream().map(LotType::getDescription).toList());
 	}
 
+	public static Specification<AuctionItem> closedEquals(Boolean closed) {
+		if (closed == null) {
+			return Specification.unrestricted();
+		}
+		String finalizedDescription = AuctionStatus.FINALIZADO.getDescription();
+		return (root, query, criteriaBuilder) -> {
+			var statusPath = root.get("auction").get("status");
+			return closed ? criteriaBuilder.equal(statusPath, finalizedDescription)
+					: criteriaBuilder.or(criteriaBuilder.notEqual(statusPath, finalizedDescription),
+							criteriaBuilder.isNull(statusPath));
+		};
+	}
+
 	public static Specification<AuctionItem> auctionStatusEquals(List<AuctionStatus> status) {
 		if (status == null || status.isEmpty()) {
 
@@ -61,6 +74,62 @@ public class AuctionItemSpecification {
 		}
 		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("auction").get("stateCode"),
 				stateCode.trim());
+	}
+
+	public static Specification<AuctionItem> brandIn(List<String> brands) {
+		if (brands == null || brands.isEmpty()) {
+			return Specification.unrestricted();
+		}
+		List<String> normalized = brands.stream().filter(b -> b != null && !b.isBlank())
+				.map(b -> b.trim().toUpperCase()).toList();
+		if (normalized.isEmpty()) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> criteriaBuilder.upper(root.get("brand")).in(normalized);
+	}
+
+	public static Specification<AuctionItem> yearIn(List<String> years) {
+		if (years == null || years.isEmpty()) {
+			return Specification.unrestricted();
+		}
+		List<String> normalized = years.stream().filter(y -> y != null && !y.isBlank()).map(String::trim).toList();
+		if (normalized.isEmpty()) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> root.get("vehicleYear").in(normalized);
+	}
+
+	public static Specification<AuctionItem> modelContains(String model) {
+		if (model == null || model.isBlank()) {
+			return Specification.unrestricted();
+		}
+		String like = "%" + model.trim().toLowerCase() + "%";
+		return (root, query, criteriaBuilder) -> criteriaBuilder.like(criteriaBuilder.lower(root.get("model")), like);
+	}
+
+	public static Specification<AuctionItem> bidBetween(java.math.BigDecimal min, java.math.BigDecimal max) {
+		return valueBetween("currentBidValue", min, max);
+	}
+
+	public static Specification<AuctionItem> fipeBetween(java.math.BigDecimal min, java.math.BigDecimal max) {
+		return valueBetween("fipeValue", min, max);
+	}
+
+	private static Specification<AuctionItem> valueBetween(String attribute, java.math.BigDecimal min,
+			java.math.BigDecimal max) {
+		if (min == null && max == null) {
+			return Specification.unrestricted();
+		}
+		return (root, query, criteriaBuilder) -> {
+			List<Predicate> predicates = new ArrayList<>();
+			if (min != null) {
+				predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get(attribute), min));
+			}
+			if (max != null) {
+				predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get(attribute), max));
+			}
+			return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+		};
 	}
 
 	public static Specification<AuctionItem> searchAllFields(String searchTerm, EntityManager entityManager) {

@@ -29,6 +29,10 @@ public class ImageStorageService {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ImageStorageService.class);
 	private static final String DATA_URI_PREFIX = "data:";
+	private static final int MAX_IMAGES_PER_LOT = 30;
+	// Padrao das fotos do provedor: .../img_{lotId}_{n}.jpg — a lista entrega apenas o _1.
+	private static final java.util.regex.Pattern SEQUENTIAL_IMAGE = java.util.regex.Pattern
+			.compile("^(.*_)(\\d+)(\\.[A-Za-z0-9]+)$");
 
 	private final RestClient restClient;
 
@@ -72,6 +76,75 @@ public class ImageStorageService {
 			}
 			AuctionItemImage downloaded = download(trimmed);
 			item.addImage(downloaded != null ? downloaded : new AuctionItemImage(trimmed, null, null));
+		}
+	}
+
+	/**
+	 * Descobre e baixa TODAS as fotos de um lote. A pagina de lista entrega apenas a primeira foto
+	 * ({@code img_{lotId}_1.jpg}); as demais seguem o mesmo padrao sequencial. A descoberta roda uma
+	 * unica vez por lote (controlada por {@code imagesSynced}) para nao re-baixar a cada coleta de
+	 * 15 min. Itens ja coletados antes desta funcionalidade (imagesSynced nulo) sao reprocessados
+	 * na proxima coleta e passam a ter a galeria completa.
+	 */
+	public void syncLotImages(AuctionItem item, List<String> urls) {
+		if (Boolean.TRUE.equals(item.getImagesSynced())) {
+			return;
+		}
+		item.clearImages();
+		String seed = null;
+		if (urls != null) {
+			for (String url : urls) {
+				if (url == null || url.isBlank()) {
+					continue;
+				}
+				String trimmed = url.trim();
+				if (trimmed.startsWith(DATA_URI_PREFIX)) {
+					AuctionItemImage image = download(trimmed);
+					if (image != null) {
+						item.addImage(image);
+					}
+				} else if (seed == null) {
+					seed = trimmed;
+				}
+			}
+		}
+
+		if (seed != null) {
+			java.util.regex.Matcher matcher = SEQUENTIAL_IMAGE.matcher(seed);
+			if (matcher.matches()) {
+				String prefix = matcher.group(1);
+				int start = Integer.parseInt(matcher.group(2));
+				String extension = matcher.group(3);
+				// O provedor responde 200 com uma imagem placeholder fixa para indices inexistentes
+				// (em vez de 404). Descobrimos a assinatura desse placeholder sondando um indice bem
+				// alto e paramos a sequencia quando a foto baixada for igual a ele (ou repetida).
+				AuctionItemImage placeholder = download(prefix + (start + 200) + extension);
+				String placeholderData = placeholder == null ? null : placeholder.getData();
+				java.util.Set<String> seenData = new java.util.HashSet<>();
+				for (int index = start; index < start + MAX_IMAGES_PER_LOT; index++) {
+					AuctionItemImage image = download(prefix + index + extension);
+					if (image == null) {
+						break;
+					}
+					String data = image.getData();
+					if (placeholderData != null && placeholderData.equals(data)) {
+						break; // chegou no placeholder de "sem imagem"
+					}
+					if (data != null && !seenData.add(data)) {
+						break; // imagem repetida indica fim da galeria real
+					}
+					item.addImage(image);
+				}
+			} else {
+				AuctionItemImage image = download(seed);
+				item.addImage(image != null ? image : new AuctionItemImage(seed, null, null));
+			}
+		}
+
+		// So marca como sincronizado quando ao menos uma foto foi obtida; do contrario tenta de novo
+		// na proxima coleta (evita travar com 0 fotos quando o provedor estava indisponivel).
+		if (!item.getImages().isEmpty()) {
+			item.setImagesSynced(Boolean.TRUE);
 		}
 	}
 

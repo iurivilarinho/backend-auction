@@ -17,7 +17,9 @@ import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.repository.AuctionRepository;
+import com.br.auction.response.VehicleInfo;
 import com.br.auction.service.ImageStorageService;
+import com.br.auction.service.VehicleParserService;
 
 /**
  * Grava um registro ja transformado nos modelos internos da aplicacao (destino fixo).
@@ -34,12 +36,15 @@ public class InternalDestinationSender {
 	private final AuctionRepository auctionRepository;
 	private final AuctionItemRepository auctionItemRepository;
 	private final ImageStorageService imageStorageService;
+	private final VehicleParserService vehicleParserService;
 
 	public InternalDestinationSender(AuctionRepository auctionRepository,
-			AuctionItemRepository auctionItemRepository, ImageStorageService imageStorageService) {
+			AuctionItemRepository auctionItemRepository, ImageStorageService imageStorageService,
+			VehicleParserService vehicleParserService) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
 		this.imageStorageService = imageStorageService;
+		this.vehicleParserService = vehicleParserService;
 	}
 
 	/**
@@ -107,10 +112,15 @@ public class InternalDestinationSender {
 		item.setLotId(lotId);
 		item.setLotNumber(text(payload.get("lotNumber")));
 		item.setLotType(text(payload.get("lotType")));
-		item.setVehicleDescription(text(payload.get("vehicleDescription")));
+		String vehicleDescription = text(payload.get("vehicleDescription"));
+		item.setVehicleDescription(vehicleDescription);
+		VehicleInfo vehicleInfo = vehicleParserService.parse(vehicleDescription);
+		item.setBrand(vehicleInfo.getBrand());
+		item.setModel(vehicleInfo.getModel());
+		item.setVehicleYear(vehicleInfo.getYear());
 		item.setCurrentBidValue(parseDecimal(payload.get("currentBidValue")));
 		item.setFipeValue(parseDecimal(payload.get("fipeValue")));
-		imageStorageService.replaceImages(item, toUrlList(payload.get("imageUrls")));
+		imageStorageService.syncLotImages(item, toUrlList(payload.get("imageUrls")));
 
 		auctionItemRepository.save(item);
 		return isNew ? SendResult.created() : SendResult.updated();

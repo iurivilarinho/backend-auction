@@ -13,7 +13,9 @@ import org.springframework.web.client.RestClient;
 public class IntegrationHttpClientConfig {
 
 	private static final int CONNECT_TIMEOUT_MS = 30_000;
-	private static final int READ_TIMEOUT_MS = 60_000;
+	// Generoso de proposito: a coleta de lotes varre todos os editais publicados em uma unica
+	// chamada ao feed (cada edital e um scraping do provedor), entao precisa de folga.
+	private static final int READ_TIMEOUT_MS = 120_000;
 
 	@Bean
 	public RestClient integrationRestClient() {

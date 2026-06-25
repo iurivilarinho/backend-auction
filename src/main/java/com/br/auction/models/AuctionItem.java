@@ -44,6 +44,18 @@ public class AuctionItem {
 	@Schema(description = "Descricao do veiculo")
 	private String vehicleDescription;
 
+	@Column
+	@Schema(description = "Marca extraida da descricao do veiculo")
+	private String brand;
+
+	@Column
+	@Schema(description = "Modelo extraido da descricao do veiculo")
+	private String model;
+
+	@Column
+	@Schema(description = "Ano extraido da descricao do veiculo")
+	private String vehicleYear;
+
 	@Column(precision = 15, scale = 2)
 	@Schema(description = "Valor atual do lance")
 	private BigDecimal currentBidValue;
@@ -51,6 +63,10 @@ public class AuctionItem {
 	@Column(precision = 15, scale = 2)
 	@Schema(description = "Valor da tabela FIPE")
 	private BigDecimal fipeValue;
+
+	@Column
+	@Schema(description = "Indica se as fotos do lote ja foram descobertas e baixadas (evita re-descoberta a cada coleta)")
+	private Boolean imagesSynced;
 
 	@OneToMany(mappedBy = "auctionItem", cascade = CascadeType.ALL, orphanRemoval = true)
 	@OrderBy("position ASC")
@@ -98,6 +114,30 @@ public class AuctionItem {
 		this.vehicleDescription = vehicleDescription;
 	}
 
+	public String getBrand() {
+		return brand;
+	}
+
+	public void setBrand(String brand) {
+		this.brand = brand;
+	}
+
+	public String getModel() {
+		return model;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public String getVehicleYear() {
+		return vehicleYear;
+	}
+
+	public void setVehicleYear(String vehicleYear) {
+		this.vehicleYear = vehicleYear;
+	}
+
 	public BigDecimal getCurrentBidValue() {
 		return currentBidValue;
 	}
@@ -112,6 +152,14 @@ public class AuctionItem {
 
 	public void setFipeValue(BigDecimal fipeValue) {
 		this.fipeValue = fipeValue;
+	}
+
+	public Boolean getImagesSynced() {
+		return imagesSynced;
+	}
+
+	public void setImagesSynced(Boolean imagesSynced) {
+		this.imagesSynced = imagesSynced;
 	}
 
 	public List<AuctionItemImage> getImages() {
