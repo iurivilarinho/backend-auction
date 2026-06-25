@@ -52,9 +52,8 @@ public class AcquisitionDocument {
 	@Schema(description = "URL de origem no painel do provedor")
 	private String sourceUrl;
 
-	// Base64 como TEXT (LONGVARCHAR): evita Large Object (oid) no Postgres.
-	@org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.LONGVARCHAR)
-	@Column(name = "documentData")
+	// Base64 como TEXT ilimitado (evita Large Object/oid no Postgres e varchar(32600) curto demais).
+	@Column(name = "documentData", columnDefinition = "text")
 	@Schema(description = "Conteudo do documento em Base64")
 	private String data;
 

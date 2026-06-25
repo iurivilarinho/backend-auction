@@ -80,9 +80,8 @@ public class Auction {
 	@Schema(description = "Content-type do edital baixado")
 	private String editalContentType;
 
-	// Base64 como TEXT (LONGVARCHAR): evita Large Object (oid) no Postgres.
-	@org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.LONGVARCHAR)
-	@Column(name = "editalData")
+	// Base64 como TEXT ilimitado (evita Large Object/oid no Postgres e varchar(32600) curto demais).
+	@Column(name = "editalData", columnDefinition = "text")
 	@Schema(description = "PDF do edital (base64) guardado na base para ficar disponivel offline")
 	private String editalData;
 

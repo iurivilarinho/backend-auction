@@ -14,9 +14,6 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
-
 /**
  * Imagem de um veiculo armazenada no proprio banco da aplicacao. Os bytes sao baixados da
  * fonte no momento da integracao para que as imagens continuem disponiveis mesmo que o
@@ -48,10 +45,10 @@ public class AuctionItemImage {
 	@Schema(description = "Content-type da imagem (ex.: image/jpeg)")
 	private String contentType;
 
-	// Base64 como TEXT (LONGVARCHAR) — no Postgres @Lob String vira Large Object (oid) e quebra
-	// a leitura fora de transacao ("Large Objects may not be used in auto-commit mode").
-	@JdbcTypeCode(SqlTypes.LONGVARCHAR)
-	@Column(name = "imageData")
+	// Base64 como TEXT ilimitado. No Postgres, @Lob String vira Large Object (oid) — quebra a
+	// leitura fora de transacao; e LONGVARCHAR sem length gera varchar(32600), pequeno demais para
+	// uma imagem. columnDefinition=text resolve ambos (e o H2 tambem suporta TEXT).
+	@Column(name = "imageData", columnDefinition = "text")
 	@Schema(description = "Conteudo da imagem em Base64 (quando armazenada no banco; nulo quando servida via URL)")
 	private String data;
 
