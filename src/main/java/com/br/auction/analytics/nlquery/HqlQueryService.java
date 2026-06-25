@@ -238,6 +238,12 @@ public class HqlQueryService {
                 - HQL NAO tem LIMIT inline. Para "top N"/"os N primeiros", ordene e inclua
                   "limit": N no JSON (o sistema aplica setMaxResults).
                 - NUNCA use UPDATE/DELETE/INSERT, nem ';'. NUNCA use SELECT *.
+                - Funcoes proibidas (NAO existem aqui): radians(), pi(), power()/pow(), greatest()/least() so com 1 arg.
+                  Para graus->radianos multiplique pela constante 0.017453292519943295.
+                - Para perguntas que envolvam DISTANCIA / "km" / "perto" / "raio" / "ponto de partida",
+                  COPIE EXATAMENTE o bloco "DISTANCIA" do glossario abaixo, mudando SO os filtros (condicao do
+                  lote, raio em km, status). NAO invente outra formula. Lat/lng SO existem em CityGeocode (g/og),
+                  nunca em Auction/AuctionItem.
 
                 GLOSSARIO / MODELO (use exatamente assim):
                 - Veiculo/lote = AuctionItem (i): brand (marca), model (modelo), vehicleYear (ano),
