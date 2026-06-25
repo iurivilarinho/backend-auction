@@ -5,6 +5,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -234,6 +235,22 @@ public class AcquisitionService {
 					"Cole o HTML da pagina de arremates (logado em https://leilao.detran.mg.gov.br/arremates) para importar.");
 		}
 		Document document = Jsoup.parse(html);
+
+		// Conjunto de referencias de lote ja importadas (idempotencia entre execucoes).
+		Set<String> existing = new HashSet<>();
+		for (Acquisition acquisition : repository.findAll()) {
+			if (acquisition.getLotReference() != null) {
+				existing.add(acquisition.getLotReference().toLowerCase());
+			}
+		}
+
+		// 1) Tenta o parser preciso da tabela do painel (Leilao, Lote, Descricao, Valor Arremate...).
+		Element table = findArrematesTable(document);
+		if (table != null) {
+			return importFromArrematesTable(table, existing);
+		}
+
+		// 2) Fallback generico (HTML colado de layout diferente): detecta dinheiro por linha.
 		Elements rows = new Elements();
 		rows.addAll(document.select("table tbody tr"));
 		rows.addAll(document.select(".card, .arremate, .lote"));
@@ -276,6 +293,117 @@ public class AcquisitionService {
 		return new ArrematesImportResult(imported, skipped, message);
 	}
 
+	/** Localiza a tabela de arremates pelo cabecalho (precisa ter as colunas Lote e Valor Arremate). */
+	private Element findArrematesTable(Document document) {
+		for (Element table : document.select("table")) {
+			String header = table.select("th").text().toLowerCase();
+			if (header.contains("lote") && header.contains("valor")) {
+				return table;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Parser preciso da tabela do painel de arremates. Mapeia as colunas pelo cabecalho e cria uma
+	 * aquisicao por linha, usando a referencia "Leilao X / Lote Y" para evitar duplicar em re-importacoes.
+	 */
+	private ArrematesImportResult importFromArrematesTable(Element table, Set<String> existing) {
+		List<String> headers = new ArrayList<>();
+		for (Element th : table.select("tr").first().select("th, td")) {
+			headers.add(norm(th.text()));
+		}
+		int idxLeilao = indexOfHeader(headers, "leilao");
+		int idxLote = indexOfHeader(headers, "lote");
+		int idxDescricao = indexOfHeader(headers, "descricao");
+		int idxValor = indexOfHeader(headers, "valor");
+		int idxCondicao = indexOfHeader(headers, "condicao");
+		int idxStatus = indexOfHeader(headers, "status");
+
+		int imported = 0;
+		int skipped = 0;
+		Set<String> seen = new HashSet<>();
+		Elements bodyRows = table.select("tbody tr");
+		if (bodyRows.isEmpty()) {
+			bodyRows = table.select("tr");
+		}
+		for (Element row : bodyRows) {
+			Elements cells = row.select("td");
+			if (cells.isEmpty()) {
+				continue; // linha de cabecalho
+			}
+			String descricao = cell(cells, idxDescricao);
+			if (descricao == null || descricao.isBlank()) {
+				continue;
+			}
+			String leilao = cell(cells, idxLeilao);
+			String lote = cell(cells, idxLote);
+			String reference = ("Leilao " + (leilao == null ? "?" : leilao) + " / Lote "
+					+ (lote == null ? "?" : lote)).trim();
+			String dedupeKey = reference.toLowerCase();
+			if (existing.contains(dedupeKey) || !seen.add(dedupeKey)) {
+				skipped++;
+				continue;
+			}
+
+			Acquisition acquisition = new Acquisition();
+			acquisition.setVehicleDescription(truncate(descricao));
+			acquisition.setLotReference(reference);
+			acquisition.setStatus(AcquisitionStatus.ARREMATADO);
+			acquisition.setAcquisitionValue(parseMoney(cell(cells, idxValor)));
+			String condicao = cell(cells, idxCondicao);
+			String status = cell(cells, idxStatus);
+			StringBuilder notes = new StringBuilder();
+			if (condicao != null && !condicao.isBlank()) {
+				notes.append("Condicao: ").append(condicao);
+			}
+			if (status != null && !status.isBlank()) {
+				if (notes.length() > 0) {
+					notes.append(" | ");
+				}
+				notes.append("Situacao no painel: ").append(status);
+			}
+			if (notes.length() > 0) {
+				acquisition.setNotes(notes.toString());
+			}
+			repository.save(acquisition);
+			imported++;
+		}
+
+		String message = imported > 0
+				? imported + " arremate(s) importado(s) do painel"
+						+ (skipped > 0 ? " (" + skipped + " ja existente(s))." : ".")
+				: (skipped > 0 ? "Nenhum arremate novo: " + skipped + " ja estavam importados."
+						: "Nenhum arremate encontrado na pagina do painel.");
+		return new ArrematesImportResult(imported, skipped, message);
+	}
+
+	private int indexOfHeader(List<String> headers, String keyword) {
+		for (int i = 0; i < headers.size(); i++) {
+			if (headers.get(i).contains(keyword)) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	private String cell(Elements cells, int index) {
+		if (index < 0 || index >= cells.size()) {
+			return null;
+		}
+		String text = cells.get(index).text().trim();
+		return text.isEmpty() ? null : text;
+	}
+
+	/** Normaliza texto para comparacao de cabecalho (minusculo, sem acento). */
+	private String norm(String value) {
+		if (value == null) {
+			return "";
+		}
+		String lower = value.toLowerCase().trim();
+		return java.text.Normalizer.normalize(lower, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+	}
+
 	/**
 	 * Importa os arremates automaticamente: faz login no painel com o perfil salvo (arrematante),
 	 * baixa o HTML da pagina /arremates e reaproveita o mesmo parser do fluxo manual. Se o login
@@ -310,7 +438,10 @@ public class AcquisitionService {
 	}
 
 	private BigDecimal parseMoney(String raw) {
-		String normalized = raw.replace("R$", "").replace(".", "").replace(",", ".").trim();
+		if (raw == null || raw.isBlank()) {
+			return null;
+		}
+		String normalized = raw.replace("R$", "").replace(".", "").replace(",", ".").replaceAll("[^0-9.]", "").trim();
 		try {
 			return new BigDecimal(normalized);
 		} catch (NumberFormatException ex) {
