@@ -34,7 +34,9 @@ public enum InternalTargetModel {
 			InternalTargetField.of("lotType", "Tipo do lote", FieldDataType.STRING, null),
 			InternalTargetField.of("vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, null),
 			InternalTargetField.of("currentBidValue", "Valor do lance atual", FieldDataType.DECIMAL, null),
-			InternalTargetField.of("fipeValue", "Valor FIPE", FieldDataType.DECIMAL, null)));
+			InternalTargetField.of("fipeValue", "Valor FIPE", FieldDataType.DECIMAL, null),
+			InternalTargetField.of("imageUrls", "Imagens do veiculo (URLs)", FieldDataType.STRING,
+					"Aceita uma lista/array de URLs; as imagens sao baixadas e salvas no banco.")));
 
 	private final String code;
 	private final String label;

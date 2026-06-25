@@ -245,10 +245,32 @@ public class AuctionDetranService {
 
 			String currentBid = card.select("[id^=valor_atual_lote]").text().replace("R$", "").trim();
 			lot.setCurrentBidValue(currentBid);
+			lot.setImageUrls(extractImageUrls(card));
 			lots.add(lot);
 		}
 
 		return lots;
+	}
+
+	private List<String> extractImageUrls(Element card) {
+		List<String> urls = new ArrayList<>();
+		for (Element image : card.select("img")) {
+			String url = firstNonBlank(image.absUrl("data-src"), image.absUrl("src"), image.attr("data-src"),
+					image.attr("src"));
+			if (url != null && !urls.contains(url)) {
+				urls.add(url);
+			}
+		}
+		return urls;
+	}
+
+	private String firstNonBlank(String... values) {
+		for (String value : values) {
+			if (value != null && !value.isBlank()) {
+				return value;
+			}
+		}
+		return null;
 	}
 
 	private int resolveTotalPages(Document document) {

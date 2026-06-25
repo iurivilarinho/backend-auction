@@ -1,5 +1,8 @@
 package com.br.auction.response;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Lote de veículo do leilão")
@@ -26,7 +29,18 @@ public class LotResponse {
 	@Schema(description = "Nome do pátio")
 	private String yardName;
 
+	@Schema(description = "URLs de todas as imagens do veículo")
+	private List<String> imageUrls = new ArrayList<>();
+
 	public LotResponse() {
+	}
+
+	public List<String> getImageUrls() {
+		return imageUrls;
+	}
+
+	public void setImageUrls(List<String> imageUrls) {
+		this.imageUrls = imageUrls == null ? new ArrayList<>() : imageUrls;
 	}
 
 	public String getLotId() {

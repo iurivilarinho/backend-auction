@@ -3,6 +3,8 @@ package com.br.auction.integration.connector.sink;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -14,6 +16,7 @@ import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.repository.AuctionRepository;
+import com.br.auction.service.ImageStorageService;
 
 /**
  * Grava um registro ja transformado nos modelos internos da aplicacao (destino fixo).
@@ -29,11 +32,13 @@ public class InternalDestinationSender {
 
 	private final AuctionRepository auctionRepository;
 	private final AuctionItemRepository auctionItemRepository;
+	private final ImageStorageService imageStorageService;
 
 	public InternalDestinationSender(AuctionRepository auctionRepository,
-			AuctionItemRepository auctionItemRepository) {
+			AuctionItemRepository auctionItemRepository, ImageStorageService imageStorageService) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
+		this.imageStorageService = imageStorageService;
 	}
 
 	public SendResult send(InternalTargetModel targetModel, IntegrationSource source, String businessKey,
@@ -101,6 +106,7 @@ public class InternalDestinationSender {
 		item.setVehicleDescription(text(payload.get("vehicleDescription")));
 		item.setCurrentBidValue(parseDecimal(payload.get("currentBidValue")));
 		item.setFipeValue(parseDecimal(payload.get("fipeValue")));
+		imageStorageService.replaceImages(item, toUrlList(payload.get("imageUrls")));
 
 		auctionItemRepository.save(item);
 		return isNew ? SendResult.created() : SendResult.updated();
@@ -112,6 +118,32 @@ public class InternalDestinationSender {
 
 	private String resolveProviderName(IntegrationSource source) {
 		return source == null ? null : source.getProviderName();
+	}
+
+	private List<String> toUrlList(Object value) {
+		List<String> urls = new ArrayList<>();
+		if (value == null) {
+			return urls;
+		}
+		if (value instanceof List<?> list) {
+			for (Object element : list) {
+				String url = text(element);
+				if (url != null) {
+					urls.add(url);
+				}
+			}
+			return urls;
+		}
+		String single = text(value);
+		if (single != null) {
+			for (String part : single.split(",")) {
+				String url = part.trim();
+				if (!url.isEmpty()) {
+					urls.add(url);
+				}
+			}
+		}
+		return urls;
 	}
 
 	private String text(Object value) {

@@ -128,6 +128,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addField(model, "lotType", "Tipo do lote", FieldDataType.STRING, false);
 		addField(model, "vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, false);
 		addField(model, "currentBidValue", "Valor do lance", FieldDataType.STRING, false);
+		addField(model, "imageUrls", "Imagens do veiculo", FieldDataType.STRING, false);
 		return model;
 	}
 
@@ -183,6 +184,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "lotType", "lotType", null, false, 3);
 		addMapping(integration, "vehicleDescription", "vehicleDescription", null, false, 4);
 		addMapping(integration, "currentBidValue", "currentBidValue", "MONEY_BR", false, 5);
+		addMapping(integration, "imageUrls", "imageUrls", null, false, 6);
 		return integration;
 	}
 

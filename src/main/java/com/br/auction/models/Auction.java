@@ -1,6 +1,7 @@
 package com.br.auction.models;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -73,7 +74,7 @@ public class Auction {
 
 	@OneToMany(mappedBy = "auction", cascade = CascadeType.ALL)
 	@Schema(description = "Lista de veiculos pertencentes ao leilao")
-	private List<AuctionItem> items;
+	private List<AuctionItem> items = new ArrayList<>();
 
 	public Long getId() {
 		return id;

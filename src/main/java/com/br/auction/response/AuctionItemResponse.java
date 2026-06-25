@@ -1,6 +1,7 @@
 package com.br.auction.response;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import com.br.auction.enums.LotType;
 import com.br.auction.models.AuctionItem;
@@ -34,6 +35,9 @@ public class AuctionItemResponse {
 	@Schema(description = "Valor da tabela FIPE")
 	private BigDecimal fipeValue;
 
+	@Schema(description = "Imagens do veiculo (servidas pelo backend)")
+	private List<AuctionItemImageResponse> images;
+
 	@Schema(description = "Leilao ao qual o veiculo pertence")
 	private AuctionListResponse auction;
 
@@ -46,6 +50,8 @@ public class AuctionItemResponse {
 		this.vehicleDescription = item.getVehicleDescription();
 		this.currentBidValue = item.getCurrentBidValue();
 		this.fipeValue = item.getFipeValue();
+		this.images = item.getImages() == null ? List.of()
+				: item.getImages().stream().map(AuctionItemImageResponse::new).toList();
 		this.auction = item.getAuction() != null ? new AuctionListResponse(item.getAuction()) : null;
 	}
 
@@ -79,6 +85,10 @@ public class AuctionItemResponse {
 
 	public BigDecimal getFipeValue() {
 		return fipeValue;
+	}
+
+	public List<AuctionItemImageResponse> getImages() {
+		return images;
 	}
 
 	public AuctionListResponse getAuction() {

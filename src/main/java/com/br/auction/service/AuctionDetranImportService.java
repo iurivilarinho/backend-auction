@@ -31,17 +31,19 @@ public class AuctionDetranImportService {
 	private final AuctionItemRepository auctionItemRepository;
 	private final AuctionDetranService detranService;
 	private final FipeService fipeService;
+	private final ImageStorageService imageStorageService;
 	private final boolean schedulerEnabled;
 	private final boolean fipeImportEnabled;
 
 	public AuctionDetranImportService(AuctionRepository auctionRepository, AuctionItemRepository auctionItemRepository,
-			AuctionDetranService detranService, FipeService fipeService,
+			AuctionDetranService detranService, FipeService fipeService, ImageStorageService imageStorageService,
 			@Value("${auction.scheduler.enabled:false}") boolean schedulerEnabled,
 			@Value("${auction.import.fipe.enabled:false}") boolean fipeImportEnabled) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
 		this.detranService = detranService;
 		this.fipeService = fipeService;
+		this.imageStorageService = imageStorageService;
 		this.schedulerEnabled = schedulerEnabled;
 		this.fipeImportEnabled = fipeImportEnabled;
 	}
@@ -125,6 +127,7 @@ public class AuctionDetranImportService {
 			item.setLotType(lot.getLotType());
 			item.setVehicleDescription(lot.getVehicleDescription());
 			item.setCurrentBidValue(parseMoney(lot.getCurrentBidValue()));
+			imageStorageService.replaceImages(item, lot.getImageUrls());
 
 			if (fipeImportEnabled && item.getVehicleDescription() != null && !item.getVehicleDescription().isBlank()) {
 				item.setFipeValue(fipeService.getFipeValue(item.getVehicleDescription()));

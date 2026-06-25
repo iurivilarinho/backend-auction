@@ -1,8 +1,11 @@
 package com.br.auction.models;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
+import java.util.List;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.ForeignKey;
@@ -11,6 +14,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 
 @Entity
@@ -46,6 +51,11 @@ public class AuctionItem {
 	@Column(precision = 15, scale = 2)
 	@Schema(description = "Valor da tabela FIPE")
 	private BigDecimal fipeValue;
+
+	@OneToMany(mappedBy = "auctionItem", cascade = CascadeType.ALL, orphanRemoval = true)
+	@OrderBy("position ASC")
+	@Schema(description = "Imagens do veiculo armazenadas no banco")
+	private List<AuctionItemImage> images = new ArrayList<>();
 
 	@ManyToOne
 	@JoinColumn(name = "fk_Id_Auction", foreignKey = @ForeignKey(name = "FK_FROM_TBAUCTIONITEM_FOR_TBAUCTION"))
@@ -102,6 +112,24 @@ public class AuctionItem {
 
 	public void setFipeValue(BigDecimal fipeValue) {
 		this.fipeValue = fipeValue;
+	}
+
+	public List<AuctionItemImage> getImages() {
+		return images;
+	}
+
+	public void setImages(List<AuctionItemImage> images) {
+		this.images = images == null ? new ArrayList<>() : images;
+	}
+
+	public void clearImages() {
+		this.images.clear();
+	}
+
+	public void addImage(AuctionItemImage image) {
+		image.setAuctionItem(this);
+		image.setPosition(this.images.size());
+		this.images.add(image);
 	}
 
 	public Auction getAuction() {

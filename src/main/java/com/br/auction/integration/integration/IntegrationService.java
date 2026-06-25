@@ -93,9 +93,51 @@ public class IntegrationService {
 	}
 
 	@Transactional
+	public Integration clone(Long id) {
+		Integration original = findById(id);
+		Integration copy = new Integration();
+		copy.setCode(generateCloneCode(original.getCode()));
+		copy.setName(original.getName() + " (copia)");
+		copy.setDescription(original.getDescription());
+		copy.setSource(original.getSource());
+		copy.setSourceModel(original.getSourceModel());
+		copy.setCredential(original.getCredential());
+		copy.setTargetModel(original.getTargetModel());
+		copy.setTriggerMode(original.getTriggerMode());
+		copy.setCronExpression(original.getCronExpression());
+		copy.setFetchMode(original.getFetchMode());
+		copy.setBatchSize(original.getBatchSize());
+		copy.setStatus(IntegrationStatus.DRAFT);
+		copy.setActive(Boolean.FALSE);
+		for (FieldMapping mapping : original.getFieldMappings()) {
+			FieldMapping clonedMapping = new FieldMapping();
+			clonedMapping.setIntegration(copy);
+			clonedMapping.setSourceField(mapping.getSourceField());
+			clonedMapping.setTargetField(mapping.getTargetField());
+			clonedMapping.setTransform(mapping.getTransform());
+			clonedMapping.setDefaultValue(mapping.getDefaultValue());
+			clonedMapping.setRequired(mapping.getRequired());
+			clonedMapping.setUniqueKey(mapping.getUniqueKey());
+			clonedMapping.setOrdem(mapping.getOrdem());
+			copy.getFieldMappings().add(clonedMapping);
+		}
+		return repository.save(copy);
+	}
+
+	@Transactional
 	public void delete(Long id) {
 		Integration integration = findById(id);
 		repository.delete(integration);
+	}
+
+	private String generateCloneCode(String base) {
+		String candidate = base + "_COPY";
+		int suffix = 2;
+		while (repository.existsByCode(candidate)) {
+			candidate = base + "_COPY" + suffix;
+			suffix++;
+		}
+		return candidate;
 	}
 
 	private void apply(Integration integration, IntegrationRequest request) {

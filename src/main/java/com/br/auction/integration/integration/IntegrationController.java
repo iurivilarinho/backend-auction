@@ -94,6 +94,14 @@ public class IntegrationController {
 		return ResponseEntity.ok(new IntegrationRunResponse(runService.triggerManually(id)));
 	}
 
+	@Operation(summary = "Clonar integracao", description = "Cria uma copia da integracao (status rascunho) com o mesmo de->para.")
+	@ApiResponse(responseCode = "201", description = "Integracao clonada")
+	@PostMapping("/{id}/clone")
+	public ResponseEntity<IntegrationResponse> clone(@PathVariable Long id) {
+		Integration clone = service.clone(id);
+		return ResponseEntity.status(HttpStatus.CREATED).body(new IntegrationResponse(clone));
+	}
+
 	@Operation(summary = "Remover integracao")
 	@ApiResponse(responseCode = "204", description = "Integracao removida")
 	@DeleteMapping("/{id}")
