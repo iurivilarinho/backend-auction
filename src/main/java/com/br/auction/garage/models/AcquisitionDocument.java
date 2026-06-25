@@ -16,7 +16,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.Lob;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
@@ -53,7 +52,8 @@ public class AcquisitionDocument {
 	@Schema(description = "URL de origem no painel do provedor")
 	private String sourceUrl;
 
-	@Lob
+	// Base64 como TEXT (LONGVARCHAR): evita Large Object (oid) no Postgres.
+	@org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.LONGVARCHAR)
 	@Column(name = "documentData")
 	@Schema(description = "Conteudo do documento em Base64")
 	private String data;
