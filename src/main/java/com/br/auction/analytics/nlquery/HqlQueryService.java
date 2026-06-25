@@ -285,16 +285,14 @@ public class HqlQueryService {
                        FROM AuctionItem i JOIN i.auction a
                        WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
                        ORDER BY economia DESC NULLS LAST (com "limit": N).
-                - DISTANCIA ate o ponto de partida (em km): o ponto de origem esta em DistanceSetting (ds, id=1):
-                  originLatitude/originLongitude (podem ser nulos) ou a cidade originCity/originState. As coordenadas
-                  das cidades estao em CityGeocode (g): city, state, latitude, longitude, resolved. Junte a cidade do
-                  leilao por lower(g.city)=lower(a.city) AND upper(g.state)=upper(a.stateCode) AND g.resolved=true; e a
-                  cidade de ORIGEM por lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState)
-                  AND og.resolved=true. Distancia (haversine, sem funcao radians; 0.017453292519943295 = pi/180):
-                       6371 * acos( least(1.0,
-                         cos(og.latitude*0.017453292519943295) * cos(g.latitude*0.017453292519943295)
-                         * cos((g.longitude - og.longitude)*0.017453292519943295)
-                         + sin(og.latitude*0.017453292519943295) * sin(g.latitude*0.017453292519943295) ) )
+                - DISTANCIA ate o ponto de partida (em km): USE a funcao pronta
+                  distance_km(lat_origem, lng_origem, lat_destino, lng_destino) — NAO escreva a formula
+                  trigonometrica na mao. O ponto de origem esta em DistanceSetting (ds, id=1) e suas coordenadas
+                  estao em CityGeocode por originCity/originState (alias og). As coordenadas da cidade do leilao
+                  estao em CityGeocode (alias g). Junte: a cidade do leilao por lower(g.city)=lower(a.city) AND
+                  upper(g.state)=upper(a.stateCode) AND g.resolved=true; e a origem por lower(og.city)=lower(ds.originCity)
+                  AND upper(og.state)=upper(ds.originState) AND og.resolved=true. A distancia e:
+                       distance_km(og.latitude, og.longitude, g.latitude, g.longitude)
                   Ex. "melhor veiculo conservado, bom custo-beneficio, a menos de 400 km do ponto de partida":
                        SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.lotType AS condicao,
                               i.currentBidValue AS lance, a.city AS cidade,
@@ -302,13 +300,13 @@ public class HqlQueryService {
                                  WHERE i2.model = i.model AND a2.status = 'Finalizado') AS media_historica,
                               ((SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
                                  WHERE i2.model = i.model AND a2.status = 'Finalizado') - i.currentBidValue) AS economia,
-                              (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) AS distancia_km
+                              distance_km(og.latitude, og.longitude, g.latitude, g.longitude) AS distancia_km
                        FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
                        WHERE a = i.auction
                          AND lower(g.city)=lower(a.city) AND upper(g.state)=upper(a.stateCode) AND g.resolved=true
                          AND ds.id=1 AND lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState) AND og.resolved=true
                          AND a.status <> 'Finalizado' AND upper(i.lotType) LIKE '%CONSERV%'
-                         AND (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) < 400
+                         AND distance_km(og.latitude, og.longitude, g.latitude, g.longitude) < 400
                        ORDER BY economia DESC NULLS LAST (alias puro; ou ORDER BY distancia_km ASC) (com "limit": N).
                 - FILTROS DE TEXTO sempre case-insensitive: use upper()/lower(), ex.:
                   upper(i.brand) = upper('Honda') ou lower(a.city) LIKE lower('%uberlandia%').
