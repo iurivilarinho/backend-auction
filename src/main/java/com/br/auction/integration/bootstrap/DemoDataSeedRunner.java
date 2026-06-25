@@ -3,6 +3,7 @@ package com.br.auction.integration.bootstrap;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -18,25 +19,33 @@ import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.models.AuctionItemImage;
 import com.br.auction.repository.AuctionRepository;
+import com.br.auction.service.ImageStorageService;
 
 /**
- * Popula o banco com alguns leiloes e veiculos de exemplo quando ele esta vazio, incluindo
- * varias imagens por veiculo armazenadas no proprio banco. Garante que a aplicacao mostre
- * dados integrados com imagens mesmo offline e mesmo que o provedor esteja fora do ar.
+ * Popula o banco com alguns leiloes e veiculos de exemplo quando ele esta vazio. As fotos
+ * dos veiculos sao baixadas de uma fonte publica de imagens reais e armazenadas no proprio
+ * banco (resilientes a indisponibilidade da fonte). Caso o download falhe (sem internet),
+ * cai para uma imagem ilustrativa gerada localmente.
  */
 @Component
 @Order(30)
 public class DemoDataSeedRunner implements CommandLineRunner {
 
 	private static final Logger LOG = LoggerFactory.getLogger(DemoDataSeedRunner.class);
+	private static final int PHOTOS_PER_ITEM = 3;
 
 	private final AuctionRepository auctionRepository;
+	private final ImageStorageService imageStorageService;
 	private final boolean seedEnabled;
+	private final boolean downloadPhotos;
 
-	public DemoDataSeedRunner(AuctionRepository auctionRepository,
-			@Value("${integration.seed.enabled:true}") boolean seedEnabled) {
+	public DemoDataSeedRunner(AuctionRepository auctionRepository, ImageStorageService imageStorageService,
+			@Value("${integration.seed.enabled:true}") boolean seedEnabled,
+			@Value("${integration.seed.download-photos:true}") boolean downloadPhotos) {
 		this.auctionRepository = auctionRepository;
+		this.imageStorageService = imageStorageService;
 		this.seedEnabled = seedEnabled;
+		this.downloadPhotos = downloadPhotos;
 	}
 
 	@Override
@@ -50,15 +59,20 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 
 		Auction first = newAuction(provider, "DEMO-001", "001/2026", "Belo Horizonte", "Patio Central", "Publicado",
 				LocalDateTime.now().plusDays(7));
-		addItem(first, "L-1001", "1001", "CONSERVADO", "FIAT/UNO MILLE 2015", "12500.00", "28000.00", "#dbeafe");
-		addItem(first, "L-1002", "1002", "CONSERVADO", "VOLKSWAGEN/GOL 1.0 2018", "19900.00", "32000.00", "#dcfce7");
-		addItem(first, "L-1003", "1003", "SUCATA", "HONDA/CG 160 FAN 2020", "4200.00", "11000.00", "#fee2e2");
+		addItem(first, "L-1001", "1001", "CONSERVADO", "FIAT/UNO MILLE 2015", "12500.00", "28000.00", "car", 11,
+				"#dbeafe");
+		addItem(first, "L-1002", "1002", "CONSERVADO", "VOLKSWAGEN/GOL 1.0 2018", "19900.00", "32000.00", "car", 21,
+				"#dcfce7");
+		addItem(first, "L-1003", "1003", "SUCATA", "HONDA/CG 160 FAN 2020", "4200.00", "11000.00", "motorcycle", 31,
+				"#fee2e2");
 		auctionRepository.save(first);
 
 		Auction second = newAuction(provider, "DEMO-002", "002/2026", "Uberlandia", "Leiloeira MG", "Em Andamento",
 				LocalDateTime.now().plusDays(3));
-		addItem(second, "L-2001", "2001", "CONSERVADO", "CHEVROLET/ONIX 1.4 2019", "35000.00", "55000.00", "#fef9c3");
-		addItem(second, "L-2002", "2002", "CONSERVADO", "TOYOTA/COROLLA XEI 2017", "48000.00", "92000.00", "#ede9fe");
+		addItem(second, "L-2001", "2001", "CONSERVADO", "CHEVROLET/ONIX 1.4 2019", "35000.00", "55000.00", "car", 41,
+				"#fef9c3");
+		addItem(second, "L-2002", "2002", "CONSERVADO", "TOYOTA/COROLLA XEI 2017", "48000.00", "92000.00", "car", 51,
+				"#ede9fe");
 		auctionRepository.save(second);
 
 		LOG.info("Dados de exemplo (leiloes e veiculos com imagens) cadastrados automaticamente.");
@@ -83,7 +97,7 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 	}
 
 	private void addItem(Auction auction, String lotId, String lotNumber, String lotType, String description,
-			String bid, String fipe, String color) {
+			String bid, String fipe, String imageTag, int lockBase, String fallbackColor) {
 		AuctionItem item = new AuctionItem();
 		item.setAuction(auction);
 		item.setLotId(lotId);
@@ -92,10 +106,27 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 		item.setVehicleDescription(description);
 		item.setCurrentBidValue(new BigDecimal(bid));
 		item.setFipeValue(new BigDecimal(fipe));
-		for (String angle : List.of("Frente", "Lateral", "Traseira")) {
-			item.addImage(svgImage(description, angle, color));
+
+		List<AuctionItemImage> photos = downloadPhotos ? imageStorageService.buildImages(buildPhotoUrls(imageTag, lockBase))
+				: List.of();
+		if (photos.isEmpty()) {
+			for (String angle : List.of("Frente", "Lateral", "Traseira")) {
+				item.addImage(svgImage(description, angle, fallbackColor));
+			}
+		} else {
+			for (AuctionItemImage photo : photos) {
+				item.addImage(photo);
+			}
 		}
 		auction.getItems().add(item);
+	}
+
+	private List<String> buildPhotoUrls(String tag, int lockBase) {
+		List<String> urls = new ArrayList<>(PHOTOS_PER_ITEM);
+		for (int i = 0; i < PHOTOS_PER_ITEM; i++) {
+			urls.add("https://loremflickr.com/640/420/" + tag + "?lock=" + (lockBase + i));
+		}
+		return urls;
 	}
 
 	private AuctionItemImage svgImage(String description, String angle, String color) {
