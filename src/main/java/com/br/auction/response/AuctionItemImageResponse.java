@@ -22,7 +22,9 @@ public class AuctionItemImageResponse {
 
 	public AuctionItemImageResponse(AuctionItemImage image) {
 		this.id = image.getId();
-		this.url = "/api/images/" + image.getId();
+		boolean storedInDb = image.getData() != null && !image.getData().isBlank();
+		// Se os bytes estao no banco, serve do backend; senao, usa a URL original do provedor.
+		this.url = storedInDb ? "/api/images/" + image.getId() : image.getSourceUrl();
 		this.sourceUrl = image.getSourceUrl();
 	}
 

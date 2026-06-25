@@ -91,7 +91,8 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		source.setName("Fonte " + provider.getName());
 		source.setDescription("Provedor inicial da aplicacao (extensivel a novos estados/provedores)");
 		source.setConnectorType(ConnectorType.REST);
-		source.setBaseUrl(provider.getBaseUrl());
+		// Consome o provedor pelo proprio backend (scraping real exposto como JSON paginado).
+		source.setBaseUrl(selfUrl);
 		source.setProviderCode(provider.getCode());
 		source.setProviderName(provider.getName());
 		source.setStateCode(provider.getStateCode());
@@ -106,7 +107,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		model.setName("Leiloes do provedor");
 		model.setDescription("Estrutura dos leiloes recebidos do provedor");
 		model.setConnectorType(ConnectorType.REST);
-		model.setResourcePath("json/site/auctions");
+		model.setResourcePath("api/feed/auctions");
 		model.setItemsJsonPath("items");
 		model.setHasNextJsonPath("hasNext");
 		model.setSourceMethod(SourceMethod.GET);
@@ -128,7 +129,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		model.setName("Lotes do provedor");
 		model.setDescription("Estrutura dos lotes/veiculos recebidos do provedor");
 		model.setConnectorType(ConnectorType.REST);
-		model.setResourcePath("json/site/details/auction");
+		model.setResourcePath("api/feed/lots");
 		model.setItemsJsonPath("lots");
 		model.setHasNextJsonPath("hasNext");
 		model.setSourceMethod(SourceMethod.GET);
@@ -162,7 +163,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		integration.setSource(source);
 		integration.setSourceModel(model);
 		integration.setTargetModel(InternalTargetModel.AUCTION);
-		integration.setTriggerMode(TriggerMode.INBOUND);
+		integration.setTriggerMode(TriggerMode.MANUAL);
 		integration.setFetchMode(FetchMode.FULL);
 		integration.setStatus(IntegrationStatus.ACTIVE);
 		integration.setActive(Boolean.TRUE);
@@ -185,7 +186,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		integration.setSource(source);
 		integration.setSourceModel(model);
 		integration.setTargetModel(InternalTargetModel.AUCTION_ITEM);
-		integration.setTriggerMode(TriggerMode.INBOUND);
+		integration.setTriggerMode(TriggerMode.MANUAL);
 		integration.setFetchMode(FetchMode.FULL);
 		integration.setStatus(IntegrationStatus.ACTIVE);
 		integration.setActive(Boolean.TRUE);

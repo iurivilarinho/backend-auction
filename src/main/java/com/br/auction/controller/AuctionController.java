@@ -76,10 +76,10 @@ public class AuctionController {
 		return ResponseEntity.ok(providers);
 	}
 
-	@Operation(summary = "Sincronizar leiloes do provedor", description = "Busca leiloes no provedor externo e persiste no banco configurado. Minas Gerais e o provedor padrao atual.")
-	@ApiResponse(responseCode = "200", description = "Sincronizacao concluida")
+	@Operation(summary = "Sincronizar leiloes do provedor", description = "Dispara em segundo plano a coleta de leiloes no provedor externo e persiste no banco. A coleta completa pode demorar; os dados aparecem em instantes. Minas Gerais e o provedor padrao atual.")
+	@ApiResponse(responseCode = "202", description = "Sincronizacao iniciada")
 	@PostMapping("/auctions/sync")
-	public ResponseEntity<AuctionSyncResultResponse> syncAuctions(
+	public ResponseEntity<java.util.Map<String, Object>> syncAuctions(
 			@Parameter(description = "Codigo do provedor. Padrao: DETRAN_MG") @RequestParam(required = false) String providerCode,
 			@Parameter(description = "Numero do edital no filtro do portal") @RequestParam(required = false) String auctionNumber,
 			@Parameter(description = "Data inicial de encerramento no formato dd/MM/yyyy") @RequestParam(required = false) String closingDateStart,
@@ -104,7 +104,12 @@ public class AuctionController {
 		filter.setColor(color);
 		filter.setCondition(condition);
 
-		return ResponseEntity.ok(importService.syncAuctions(provider, filter));
+		importService.syncAuctionsAsync(provider, filter);
+		java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
+		body.put("started", true);
+		body.put("providerCode", provider.getCode());
+		body.put("message", "Sincronizacao iniciada em segundo plano. Os leiloes serao atualizados em instantes.");
+		return ResponseEntity.accepted().body(body);
 	}
 
 	@Operation(summary = "Listar leiloes", description = "Retorna uma lista paginada de leiloes persistidos no backend.")

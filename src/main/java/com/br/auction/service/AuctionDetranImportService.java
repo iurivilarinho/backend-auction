@@ -7,6 +7,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,7 @@ import com.br.auction.response.LotResponse;
 @Service
 public class AuctionDetranImportService {
 
+	private static final Logger LOGGER = LoggerFactory.getLogger(AuctionDetranImportService.class);
 	private static final DateTimeFormatter BRAZIL_DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
 	private final AuctionRepository auctionRepository;
@@ -48,13 +51,38 @@ public class AuctionDetranImportService {
 		this.fipeImportEnabled = fipeImportEnabled;
 	}
 
+	/**
+	 * Sincronizacao recorrente com o provedor (a cada 15 minutos). Como ninguem dispara dados
+	 * de la pra ca, a coleta e feita ativamente aqui, de forma incremental (upsert): atualiza
+	 * os valores de lance e a situacao dos lotes a cada execucao.
+	 */
 	@Transactional
-	@Scheduled(fixedDelayString = "600000", initialDelayString = "600000")
+	@Scheduled(fixedDelayString = "${auction.scheduler.interval-ms:900000}", initialDelayString = "${auction.scheduler.initial-delay-ms:15000}")
 	public void importAllAuctions() {
 		if (!schedulerEnabled) {
 			return;
 		}
-		syncAuctions(AuctionProvider.defaultProvider(), new AuctionSourceFilter());
+		try {
+			AuctionSyncResultResponse result = syncAuctions(AuctionProvider.defaultProvider(), new AuctionSourceFilter());
+			LOGGER.info("Sincronizacao automatica concluida: {} leiloes na fonte, {} importados, {} atualizados, {} itens.",
+					result.getTotalSourceAuctions(), result.getImportedAuctions(), result.getUpdatedAuctions(),
+					result.getImportedItems());
+		} catch (RuntimeException ex) {
+			LOGGER.warn("Falha na sincronizacao automatica com o provedor: {}", ex.getMessage());
+		}
+	}
+
+	/**
+	 * Dispara a sincronizacao em segundo plano (a coleta completa do provedor pode demorar).
+	 */
+	@org.springframework.scheduling.annotation.Async
+	@Transactional
+	public void syncAuctionsAsync(AuctionProvider provider, AuctionSourceFilter filter) {
+		try {
+			syncAuctions(provider, filter);
+		} catch (RuntimeException ex) {
+			LOGGER.warn("Falha na sincronizacao manual com o provedor: {}", ex.getMessage());
+		}
 	}
 
 	@Transactional

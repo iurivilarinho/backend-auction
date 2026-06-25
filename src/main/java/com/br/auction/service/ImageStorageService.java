@@ -35,7 +35,9 @@ public class ImageStorageService {
 	}
 
 	/**
-	 * Substitui todas as imagens do item pelas baixadas a partir das URLs informadas.
+	 * Substitui todas as imagens do item. Para data URIs (data:image/...) baixa e armazena os
+	 * bytes no banco; para URLs http(s) (fotos reais do provedor) guarda apenas a URL, evitando
+	 * baixar milhares de imagens no scraping. A foto real continua sendo exibida pela URL.
 	 */
 	public void replaceImages(AuctionItem item, List<String> urls) {
 		item.clearImages();
@@ -43,9 +45,17 @@ public class ImageStorageService {
 			return;
 		}
 		for (String url : urls) {
-			AuctionItemImage image = download(url);
-			if (image != null) {
-				item.addImage(image);
+			if (url == null || url.isBlank()) {
+				continue;
+			}
+			String trimmed = url.trim();
+			if (trimmed.startsWith(DATA_URI_PREFIX)) {
+				AuctionItemImage image = download(trimmed);
+				if (image != null) {
+					item.addImage(image);
+				}
+			} else {
+				item.addImage(new AuctionItemImage(trimmed, null, null));
 			}
 		}
 	}

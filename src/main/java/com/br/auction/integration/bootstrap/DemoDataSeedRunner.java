@@ -74,7 +74,7 @@ public class DemoDataSeedRunner implements CommandLineRunner {
 	private final boolean downloadPhotos;
 
 	public DemoDataSeedRunner(AuctionRepository auctionRepository, ImageStorageService imageStorageService,
-			@Value("${integration.seed.enabled:true}") boolean seedEnabled,
+			@Value("${integration.seed.demo-data:false}") boolean seedEnabled,
 			@Value("${integration.seed.download-photos:true}") boolean downloadPhotos) {
 		this.auctionRepository = auctionRepository;
 		this.imageStorageService = imageStorageService;

@@ -47,8 +47,8 @@ public class AuctionItemImage {
 	private String contentType;
 
 	@Lob
-	@Column(name = "imageData", nullable = false)
-	@Schema(description = "Conteudo da imagem em Base64 armazenado no banco")
+	@Column(name = "imageData")
+	@Schema(description = "Conteudo da imagem em Base64 (quando armazenada no banco; nulo quando servida via URL)")
 	private String data;
 
 	@Column(name = "imagePosition")
