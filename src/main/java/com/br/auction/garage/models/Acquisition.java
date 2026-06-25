@@ -37,10 +37,22 @@ public class Acquisition {
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
 
-	@ManyToOne(fetch = FetchType.EAGER, optional = false)
+	@ManyToOne(fetch = FetchType.EAGER)
 	@JoinColumn(name = "fk_Id_AuctionItem", foreignKey = @ForeignKey(name = "FK_FROM_TBACQUISITION_FOR_TBAUCTIONITEM"))
-	@Schema(description = "Veiculo (lote) adquirido")
+	@Schema(description = "Veiculo (lote) adquirido, quando existe no catalogo interno")
 	private AuctionItem auctionItem;
+
+	@Column(length = 300)
+	@Schema(description = "Descricao do veiculo (para adquiridos importados/manuais sem item interno)")
+	private String vehicleDescription;
+
+	@Column(length = 120)
+	@Schema(description = "Referencia do lote/leilao no provedor")
+	private String lotReference;
+
+	@Column(length = 1000)
+	@Schema(description = "URL de origem no painel do provedor")
+	private String sourceUrl;
 
 	@Enumerated(EnumType.STRING)
 	@Column(nullable = false, length = 30)
@@ -123,6 +135,40 @@ public class Acquisition {
 
 	public void setAuctionItem(AuctionItem auctionItem) {
 		this.auctionItem = auctionItem;
+	}
+
+	public String getVehicleDescription() {
+		return vehicleDescription;
+	}
+
+	public void setVehicleDescription(String vehicleDescription) {
+		this.vehicleDescription = vehicleDescription;
+	}
+
+	public String getLotReference() {
+		return lotReference;
+	}
+
+	public void setLotReference(String lotReference) {
+		this.lotReference = lotReference;
+	}
+
+	public String getSourceUrl() {
+		return sourceUrl;
+	}
+
+	public void setSourceUrl(String sourceUrl) {
+		this.sourceUrl = sourceUrl;
+	}
+
+	/**
+	 * Descricao de exibicao do veiculo, vinda do item interno ou do campo proprio.
+	 */
+	public String resolveVehicleDescription() {
+		if (auctionItem != null && auctionItem.getVehicleDescription() != null) {
+			return auctionItem.getVehicleDescription();
+		}
+		return vehicleDescription;
 	}
 
 	public AcquisitionStatus getStatus() {

@@ -17,8 +17,19 @@ public class ExpenseQuoteRequest {
 	@Schema(description = "Valor orcado")
 	private BigDecimal value;
 
+	@Schema(description = "URL do orcamento (link do produto/loja)")
+	private String url;
+
 	@Schema(description = "Observacoes")
 	private String notes;
+
+	public String getUrl() {
+		return url;
+	}
+
+	public void setUrl(String url) {
+		this.url = url;
+	}
 
 	public String getPlace() {
 		return place;

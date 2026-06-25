@@ -12,6 +12,7 @@ public class ExpenseQuoteResponse {
 	private final Long id;
 	private final String place;
 	private final BigDecimal value;
+	private final String url;
 	private final String notes;
 	private final boolean selected;
 
@@ -19,8 +20,13 @@ public class ExpenseQuoteResponse {
 		this.id = quote.getId();
 		this.place = quote.getPlace();
 		this.value = quote.getValue();
+		this.url = quote.getUrl();
 		this.notes = quote.getNotes();
 		this.selected = Boolean.TRUE.equals(quote.getSelected());
+	}
+
+	public String getUrl() {
+		return url;
 	}
 
 	public Long getId() {

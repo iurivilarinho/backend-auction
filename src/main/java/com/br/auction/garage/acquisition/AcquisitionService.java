@@ -1,8 +1,17 @@
 package com.br.auction.garage.acquisition;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -52,16 +61,21 @@ public class AcquisitionService {
 
 	@Transactional
 	public Acquisition create(AcquisitionRequest request) {
-		if (request.getAuctionItemId() == null) {
-			throw new IllegalArgumentException("O veiculo (auctionItemId) e obrigatorio");
-		}
-		AuctionItem item = auctionItemRepository.findById(request.getAuctionItemId())
-				.orElseThrow(() -> new EntityNotFoundException("Veiculo nao encontrado: " + request.getAuctionItemId()));
 		Acquisition acquisition = new Acquisition();
-		acquisition.setAuctionItem(item);
+		AuctionItem item = null;
+		if (request.getAuctionItemId() != null) {
+			item = auctionItemRepository.findById(request.getAuctionItemId()).orElseThrow(
+					() -> new EntityNotFoundException("Veiculo nao encontrado: " + request.getAuctionItemId()));
+			acquisition.setAuctionItem(item);
+		} else if (request.getVehicleDescription() == null || request.getVehicleDescription().isBlank()) {
+			throw new IllegalArgumentException("Informe o veiculo (auctionItemId) ou a descricao do veiculo");
+		}
+		acquisition.setVehicleDescription(request.getVehicleDescription());
+		acquisition.setLotReference(request.getLotReference());
+		acquisition.setSourceUrl(request.getSourceUrl());
 		acquisition.setStatus(request.getStatus() == null ? AcquisitionStatus.ARREMATADO : request.getStatus());
-		acquisition.setAcquisitionValue(
-				request.getAcquisitionValue() != null ? request.getAcquisitionValue() : item.getCurrentBidValue());
+		acquisition.setAcquisitionValue(request.getAcquisitionValue() != null ? request.getAcquisitionValue()
+				: (item != null ? item.getCurrentBidValue() : null));
 		acquisition.setSaleValue(request.getSaleValue());
 		acquisition.setAcquiredAt(request.getAcquiredAt());
 		acquisition.setInspectionDeadline(request.getInspectionDeadline());
@@ -113,6 +127,7 @@ public class AcquisitionService {
 				ExpenseQuote quote = new ExpenseQuote();
 				quote.setPlace(quoteRequest.getPlace());
 				quote.setValue(quoteRequest.getValue());
+				quote.setUrl(quoteRequest.getUrl());
 				quote.setNotes(quoteRequest.getNotes());
 				quote.setSelected(Boolean.FALSE);
 				expense.addQuote(quote);
@@ -136,6 +151,7 @@ public class AcquisitionService {
 		ExpenseQuote quote = new ExpenseQuote();
 		quote.setPlace(request.getPlace());
 		quote.setValue(request.getValue());
+		quote.setUrl(request.getUrl());
 		quote.setNotes(request.getNotes());
 		quote.setSelected(Boolean.FALSE);
 		expense.addQuote(quote);
@@ -199,6 +215,85 @@ public class AcquisitionService {
 			throw new EntityNotFoundException("Documento nao pertence ao veiculo informado");
 		}
 		return document;
+	}
+
+	private static final Pattern MONEY = Pattern.compile("R\\$\\s*[\\d.]+,\\d{2}");
+
+	/**
+	 * Importa os arremates a partir do HTML da pagina /arremates (copiada enquanto o usuario
+	 * esta logado no painel). O login do painel e SAML/SSO e nao pode ser automatizado de
+	 * forma confiavel, por isso a importacao trabalha sobre o HTML fornecido.
+	 */
+	@Transactional
+	public ArrematesImportResult importArremates(String html) {
+		if (html == null || html.isBlank()) {
+			return new ArrematesImportResult(0, 0,
+					"Cole o HTML da pagina de arremates (logado em https://leilao.detran.mg.gov.br/arremates) para importar.");
+		}
+		Document document = Jsoup.parse(html);
+		Elements rows = new Elements();
+		rows.addAll(document.select("table tbody tr"));
+		rows.addAll(document.select(".card, .arremate, .lote"));
+		if (rows.isEmpty()) {
+			rows.addAll(document.select("li"));
+		}
+
+		Set<String> seen = new HashSet<>();
+		int imported = 0;
+		int skipped = 0;
+		for (Element row : rows) {
+			String text = row.text().trim();
+			Matcher money = MONEY.matcher(text);
+			if (!money.find()) {
+				continue;
+			}
+			String description = extractDescription(row, text);
+			if (description == null || description.isBlank()) {
+				continue;
+			}
+			if (!seen.add(description.toLowerCase())) {
+				skipped++;
+				continue;
+			}
+			Acquisition acquisition = new Acquisition();
+			acquisition.setVehicleDescription(description);
+			acquisition.setStatus(AcquisitionStatus.ARREMATADO);
+			acquisition.setAcquisitionValue(parseMoney(money.group()));
+			Element link = row.selectFirst("a[href]");
+			if (link != null) {
+				acquisition.setSourceUrl(link.absUrl("href"));
+			}
+			repository.save(acquisition);
+			imported++;
+		}
+
+		String message = imported > 0
+				? imported + " arremate(s) importado(s)" + (skipped > 0 ? " (" + skipped + " duplicado(s))." : ".")
+				: "Nenhum arremate reconhecido no HTML. Confirme que copiou a pagina /arremates estando logado.";
+		return new ArrematesImportResult(imported, skipped, message);
+	}
+
+	private String extractDescription(Element row, String fallback) {
+		for (String selector : List.of("b", "strong", ".titulo", ".descricao", "td", "h5", "h6")) {
+			Element element = row.selectFirst(selector);
+			if (element != null && !element.text().isBlank() && element.text().length() >= 4) {
+				return truncate(element.text().trim());
+			}
+		}
+		return truncate(fallback);
+	}
+
+	private String truncate(String value) {
+		return value.length() > 280 ? value.substring(0, 280) : value;
+	}
+
+	private BigDecimal parseMoney(String raw) {
+		String normalized = raw.replace("R$", "").replace(".", "").replace(",", ".").trim();
+		try {
+			return new BigDecimal(normalized);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
 	}
 
 	public AcquisitionDashboardResponse dashboard() {

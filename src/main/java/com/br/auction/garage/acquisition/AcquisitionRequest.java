@@ -10,8 +10,17 @@ import io.swagger.v3.oas.annotations.media.Schema;
 @Schema(description = "Dados de um veiculo adquirido")
 public class AcquisitionRequest {
 
-	@Schema(description = "ID do item de leilao (veiculo) - obrigatorio na criacao")
+	@Schema(description = "ID do item de leilao (veiculo) - use quando o veiculo existe no catalogo interno")
 	private Long auctionItemId;
+
+	@Schema(description = "Descricao do veiculo (para adquiridos manuais/importados sem item interno)")
+	private String vehicleDescription;
+
+	@Schema(description = "Referencia do lote/leilao")
+	private String lotReference;
+
+	@Schema(description = "URL de origem no painel")
+	private String sourceUrl;
 
 	@Schema(description = "Situacao do veiculo")
 	private AcquisitionStatus status;
@@ -40,6 +49,30 @@ public class AcquisitionRequest {
 
 	public void setAuctionItemId(Long auctionItemId) {
 		this.auctionItemId = auctionItemId;
+	}
+
+	public String getVehicleDescription() {
+		return vehicleDescription;
+	}
+
+	public void setVehicleDescription(String vehicleDescription) {
+		this.vehicleDescription = vehicleDescription;
+	}
+
+	public String getLotReference() {
+		return lotReference;
+	}
+
+	public void setLotReference(String lotReference) {
+		this.lotReference = lotReference;
+	}
+
+	public String getSourceUrl() {
+		return sourceUrl;
+	}
+
+	public void setSourceUrl(String sourceUrl) {
+		this.sourceUrl = sourceUrl;
 	}
 
 	public AcquisitionStatus getStatus() {

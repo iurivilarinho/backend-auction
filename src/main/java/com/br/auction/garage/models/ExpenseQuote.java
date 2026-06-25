@@ -39,6 +39,10 @@ public class ExpenseQuote {
 	@Schema(description = "Valor orcado")
 	private BigDecimal value;
 
+	@Column(length = 1000)
+	@Schema(description = "URL do orcamento (link do produto/loja)")
+	private String url;
+
 	@Column(length = 300)
 	@Schema(description = "Observacoes do orcamento")
 	private String notes;
@@ -73,6 +77,14 @@ public class ExpenseQuote {
 
 	public void setValue(BigDecimal value) {
 		this.value = value;
+	}
+
+	public String getUrl() {
+		return url;
+	}
+
+	public void setUrl(String url) {
+		this.url = url;
 	}
 
 	public String getNotes() {

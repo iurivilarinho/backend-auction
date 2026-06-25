@@ -16,6 +16,9 @@ public class AcquisitionResponse {
 
 	private final Long id;
 	private final AuctionItemResponse vehicle;
+	private final String vehicleDescription;
+	private final String lotReference;
+	private final String sourceUrl;
 	private final AcquisitionStatus status;
 	private final String statusLabel;
 	private final BigDecimal acquisitionValue;
@@ -35,6 +38,9 @@ public class AcquisitionResponse {
 	public AcquisitionResponse(Acquisition acquisition) {
 		this.id = acquisition.getId();
 		this.vehicle = acquisition.getAuctionItem() == null ? null : new AuctionItemResponse(acquisition.getAuctionItem());
+		this.vehicleDescription = acquisition.resolveVehicleDescription();
+		this.lotReference = acquisition.getLotReference();
+		this.sourceUrl = acquisition.getSourceUrl();
 		this.status = acquisition.getStatus();
 		this.statusLabel = acquisition.getStatus() == null ? null : acquisition.getStatus().getDescription();
 		this.acquisitionValue = nullToZero(acquisition.getAcquisitionValue());
@@ -67,6 +73,18 @@ public class AcquisitionResponse {
 
 	public AuctionItemResponse getVehicle() {
 		return vehicle;
+	}
+
+	public String getVehicleDescription() {
+		return vehicleDescription;
+	}
+
+	public String getLotReference() {
+		return lotReference;
+	}
+
+	public String getSourceUrl() {
+		return sourceUrl;
 	}
 
 	public AcquisitionStatus getStatus() {

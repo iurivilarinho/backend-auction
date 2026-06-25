@@ -78,6 +78,12 @@ public class AcquisitionController {
 		return ResponseEntity.status(HttpStatus.CREATED).body(new AcquisitionResponse(service.create(request)));
 	}
 
+	@Operation(summary = "Importar arremates do painel", description = "Importa os arremates a partir do HTML da pagina /arremates (logado).")
+	@PostMapping("/import")
+	public ResponseEntity<ArrematesImportResult> importArremates(@RequestBody ArrematesImportRequest request) {
+		return ResponseEntity.ok(service.importArremates(request.getHtml()));
+	}
+
 	@Operation(summary = "Atualizar veiculo adquirido")
 	@PutMapping("/{id}")
 	public ResponseEntity<AcquisitionResponse> update(@PathVariable Long id, @Valid @RequestBody AcquisitionRequest request) {
