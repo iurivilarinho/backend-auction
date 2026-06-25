@@ -250,13 +250,22 @@ public class HqlQueryService {
                   saleValue (valor de venda), status, acquiredAt, soldAt. Gasto = AcquisitionExpense (e): e.acquisition,
                   type, value, status. LUCRO de um veiculo vendido = aq.saleValue - aq.acquisitionValue
                   - (SELECT coalesce(sum(e.value),0) FROM AcquisitionExpense e WHERE e.acquisition = aq).
-                - RENTABILIDADE / "bom negocio" / "abaixo do mercado": fipeValue normalmente e 0 nesta base.
-                  Use como referencia de mercado a MEDIA de currentBidValue do MESMO modelo e destaque lotes
-                  ABERTOS cujo lance esta mais abaixo dessa media; economia = media_do_modelo - currentBidValue.
+                - PRECO DE REFERENCIA / "historico" / "quanto costuma sair" / "abaixo do mercado" / "bom negocio":
+                  fipeValue normalmente e 0 nesta base. NUNCA misture status na media: o currentBidValue de lotes
+                  ABERTOS ('Publicado'/'Em Andamento') e apenas o lance PARCIAL atual (baixo, ainda subindo) e nao
+                  serve de referencia. O preco que um modelo REALMENTE atingiu e o dos leiloes ENCERRADOS
+                  (a2.status = 'Finalizado') — essa e a media HISTORICA de mercado. Sempre arredonde: round(avg(...),2).
+                  Para "bom negocio agora", compare o lance de cada lote ABERTO com a media historica (finalizados)
+                  do MESMO modelo; economia = media_historica - currentBidValue (maior = melhor). Se a pergunta citar
+                  "pela regiao", restrinja o historico ao MESMO estado (a2.stateCode = a.stateCode).
                   Ex.: SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.currentBidValue AS lance,
-                       (SELECT avg(i2.currentBidValue) FROM AuctionItem i2 WHERE i2.model = i.model) AS media_modelo
-                       FROM AuctionItem i JOIN i.auction a WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
-                       ORDER BY (media_modelo - i.currentBidValue) DESC (com "limit": N).
+                              a.city AS cidade,
+                              (SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
+                                 WHERE i2.model = i.model AND a2.status = 'Finalizado'
+                                 AND a2.stateCode = a.stateCode) AS media_historica_regiao
+                       FROM AuctionItem i JOIN i.auction a
+                       WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
+                       ORDER BY (media_historica_regiao - i.currentBidValue) DESC (com "limit": N).
                 - DISTANCIA ate o ponto de partida (em km): o ponto de origem esta em DistanceSetting (ds, id=1):
                   originLatitude/originLongitude (podem ser nulos) ou a cidade originCity/originState. As coordenadas
                   das cidades estao em CityGeocode (g): city, state, latitude, longitude, resolved. Junte a cidade do
@@ -270,7 +279,8 @@ public class HqlQueryService {
                   Ex. "melhor veiculo conservado, bom custo-beneficio, a menos de 400 km do ponto de partida":
                        SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.lotType AS condicao,
                               i.currentBidValue AS lance, a.city AS cidade,
-                              (SELECT avg(i2.currentBidValue) FROM AuctionItem i2 WHERE i2.model = i.model) AS media_modelo,
+                              (SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
+                                 WHERE i2.model = i.model AND a2.status = 'Finalizado') AS media_historica,
                               (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) AS distancia_km
                        FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
                        WHERE a = i.auction
@@ -278,7 +288,7 @@ public class HqlQueryService {
                          AND ds.id=1 AND lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState) AND og.resolved=true
                          AND a.status <> 'Finalizado' AND upper(i.lotType) LIKE '%CONSERV%'
                          AND (6371 * acos(least(1.0, cos(og.latitude*0.017453292519943295)*cos(g.latitude*0.017453292519943295)*cos((g.longitude-og.longitude)*0.017453292519943295)+sin(og.latitude*0.017453292519943295)*sin(g.latitude*0.017453292519943295)))) < 400
-                       ORDER BY distancia_km ASC (com "limit": N; ou ordene por (media_modelo - i.currentBidValue) DESC p/ priorizar economia).
+                       ORDER BY distancia_km ASC (com "limit": N; ou ordene por (media_historica - i.currentBidValue) DESC p/ priorizar economia).
                 - FILTROS DE TEXTO sempre case-insensitive: use upper()/lower(), ex.:
                   upper(i.brand) = upper('Honda') ou lower(a.city) LIKE lower('%uberlandia%').
                   Os dados estao com marca/modelo em MAIUSCULAS e cidade em minusculas.
