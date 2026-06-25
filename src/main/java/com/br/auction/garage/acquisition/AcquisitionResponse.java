@@ -34,6 +34,7 @@ public class AcquisitionResponse {
 	private final List<AcquisitionDocumentResponse> documents;
 	private final LocalDateTime createdAt;
 	private final LocalDateTime updatedAt;
+	private final String editalUrl;
 
 	public AcquisitionResponse(Acquisition acquisition) {
 		this.id = acquisition.getId();
@@ -61,6 +62,14 @@ public class AcquisitionResponse {
 				.toList();
 		this.createdAt = acquisition.getCreatedAt();
 		this.updatedAt = acquisition.getUpdatedAt();
+		// Edital do leilao vinculado (quando o veiculo veio do catalogo publico).
+		this.editalUrl = acquisition.getAuctionItem() != null && acquisition.getAuctionItem().getAuction() != null
+				? "/api/auctions/" + acquisition.getAuctionItem().getAuction().getId() + "/edital/download"
+				: null;
+	}
+
+	public String getEditalUrl() {
+		return editalUrl;
 	}
 
 	private BigDecimal nullToZero(BigDecimal value) {
