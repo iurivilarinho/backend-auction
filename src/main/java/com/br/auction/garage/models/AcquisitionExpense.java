@@ -54,7 +54,7 @@ public class AcquisitionExpense {
 	@Schema(description = "Descricao do gasto")
 	private String description;
 
-	@Column(precision = 15, scale = 2)
+	@Column(name = "amount", precision = 15, scale = 2)
 	@Schema(description = "Valor efetivo (definido quando comprado)")
 	private BigDecimal value;
 

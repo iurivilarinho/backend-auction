@@ -35,7 +35,7 @@ public class ExpenseQuote {
 	@Schema(description = "Local/fornecedor do orcamento")
 	private String place;
 
-	@Column(nullable = false, precision = 15, scale = 2)
+	@Column(name = "amount", nullable = false, precision = 15, scale = 2)
 	@Schema(description = "Valor orcado")
 	private BigDecimal value;
 
