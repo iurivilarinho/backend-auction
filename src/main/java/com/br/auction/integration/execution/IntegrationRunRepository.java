@@ -13,6 +13,8 @@ public interface IntegrationRunRepository extends JpaRepository<IntegrationRun, 
 
 	Page<IntegrationRun> findByIntegrationId(Long integrationId, Pageable pageable);
 
+	Page<IntegrationRun> findAllByOrderByStartedAtDesc(Pageable pageable);
+
 	Optional<IntegrationRun> findTopByIntegrationIdOrderByStartedAtDesc(Long integrationId);
 
 	List<IntegrationRun> findByStatusOrderByStartedAtDesc(RunStatus status);

@@ -33,6 +33,21 @@ public class IntegrationRunController {
 		return ResponseEntity.ok(page);
 	}
 
+	@Operation(summary = "Listar todas as execucoes", description = "Lista paginada de execucoes de todas as integracoes (mais recentes primeiro).")
+	@ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
+	@GetMapping("/runs")
+	public ResponseEntity<Page<IntegrationRunResponse>> findAllRuns(Pageable pageable) {
+		Page<IntegrationRunResponse> page = service.findAllRuns(pageable).map(IntegrationRunResponse::new);
+		return ResponseEntity.ok(page);
+	}
+
+	@Operation(summary = "Resumo das execucoes por status", description = "Retorna a contagem de execucoes agrupadas por status.")
+	@ApiResponse(responseCode = "200", description = "Resumo retornado com sucesso")
+	@GetMapping("/runs/summary")
+	public ResponseEntity<java.util.Map<String, Long>> runSummary() {
+		return ResponseEntity.ok(service.runSummary());
+	}
+
 	@Operation(summary = "Listar execucoes em andamento", description = "Retorna todas as execucoes com status RUNNING (para indicar integracoes em andamento na lista).")
 	@ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
 	@GetMapping("/runs/running")

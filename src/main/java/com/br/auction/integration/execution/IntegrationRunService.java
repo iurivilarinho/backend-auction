@@ -63,6 +63,18 @@ public class IntegrationRunService {
 		return runRepository.findByIntegrationId(integrationId, pageable);
 	}
 
+	public Page<IntegrationRun> findAllRuns(Pageable pageable) {
+		return runRepository.findAllByOrderByStartedAtDesc(pageable);
+	}
+
+	public java.util.Map<String, Long> runSummary() {
+		java.util.Map<String, Long> summary = new java.util.LinkedHashMap<>();
+		for (RunStatus runStatus : RunStatus.values()) {
+			summary.put(runStatus.name(), runRepository.countByStatus(runStatus));
+		}
+		return summary;
+	}
+
 	public IntegrationRun findRun(Long runId) {
 		return runRepository.findById(runId)
 				.orElseThrow(() -> new EntityNotFoundException("Execucao nao encontrada: " + runId));
