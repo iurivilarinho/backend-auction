@@ -53,6 +53,16 @@ public class DistanceController {
 						request.getOriginState())));
 	}
 
+	@Operation(summary = "Definir origem por ponto no mapa", description = "Define a origem do calculo de distancia por coordenadas (lat/lng) escolhidas no mapa. O ponto tem prioridade sobre a cidade.")
+	@ApiResponse(responseCode = "200", description = "Ponto de origem atualizado")
+	@PutMapping("/settings/point")
+	public ResponseEntity<DistanceSettingResponse> updateOriginPoint(
+			@Valid @RequestBody DistanceOriginPointRequest request) {
+		return ResponseEntity.ok(new DistanceSettingResponse(distanceService.updateOriginPoint(
+				request.getLatitude(), request.getLongitude(), request.getLabel(),
+				request.getCity(), request.getState())));
+	}
+
 	@Operation(summary = "Aquecer geocodificacao das cidades dos leiloes", description = "Enfileira (ou resolve) as coordenadas das cidades dos leiloes do escopo informado para que as distancias apareçam nas listagens.")
 	@ApiResponse(responseCode = "202", description = "Aquecimento iniciado")
 	@PostMapping("/warmup")

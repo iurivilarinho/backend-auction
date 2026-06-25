@@ -32,13 +32,15 @@ public final class BiSavedViewDtos {
             boolean isDefault,
             boolean shared,
             boolean favorite,
+            boolean archived,
             boolean mine,
             LocalDateTime createdAt,
             LocalDateTime updatedAt) {
 
         public static SavedViewResponse of(BiSavedView v) {
             return new SavedViewResponse(v.getId(), v.getOwnerId(), v.getName(), v.getScope(), v.getPayload(),
-                    v.isDefault(), v.isShared(), v.isFavorite(), true, v.getCreatedAt(), v.getUpdatedAt());
+                    v.isDefault(), v.isShared(), v.isFavorite(), v.isArchived(), true, v.getCreatedAt(),
+                    v.getUpdatedAt());
         }
     }
 }

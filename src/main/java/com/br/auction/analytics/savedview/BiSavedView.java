@@ -46,6 +46,10 @@ public class BiSavedView {
     @Column(name = "isDefault", nullable = false)
     private boolean isDefault = false;
 
+    @Schema(description = "Visao arquivada (some da lista principal, vai para a aba Arquivadas).")
+    @Column(name = "archived")
+    private Boolean archived = Boolean.FALSE;
+
     @Column(name = "createdAt", nullable = false)
     private LocalDateTime createdAt;
 
@@ -113,6 +117,14 @@ public class BiSavedView {
 
     public void setDefault(boolean isDefault) {
         this.isDefault = isDefault;
+    }
+
+    public boolean isArchived() {
+        return Boolean.TRUE.equals(archived);
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 
     /** Sem usuarios no app de leiloes: a visao nao tem dono. */

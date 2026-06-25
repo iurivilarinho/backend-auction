@@ -72,6 +72,18 @@ public class BiSavedViewController {
         return SavedViewResponse.of(service.toggleFavorite(id));
     }
 
+    @Operation(summary = "Arquiva uma visao (move para a aba Arquivadas)")
+    @PutMapping("/{id}/archive")
+    public SavedViewResponse archive(@PathVariable Long id) {
+        return SavedViewResponse.of(service.setArchived(id, true));
+    }
+
+    @Operation(summary = "Restaura uma visao arquivada")
+    @PutMapping("/{id}/unarchive")
+    public SavedViewResponse unarchive(@PathVariable Long id) {
+        return SavedViewResponse.of(service.setArchived(id, false));
+    }
+
     @Operation(summary = "Duplica uma visao")
     @PostMapping("/{id}/duplicate")
     public ResponseEntity<SavedViewResponse> duplicate(@PathVariable Long id) {

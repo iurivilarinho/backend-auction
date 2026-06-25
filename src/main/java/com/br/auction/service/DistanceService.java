@@ -51,6 +51,10 @@ public class DistanceService {
 		DistanceSetting setting = getOrCreateSettings();
 		setting.setOriginCity(originCity.trim());
 		setting.setOriginState(originState.trim());
+		// Origem por cidade: descarta o ponto exato do mapa para que a cidade volte a valer.
+		setting.setOriginLatitude(null);
+		setting.setOriginLongitude(null);
+		setting.setOriginLabel(null);
 		DistanceSetting saved = settingRepository.save(setting);
 		// Garante que a origem esteja geocodificada para os calculos seguintes.
 		geocodingService.geocodeNow(saved.getOriginCity(), saved.getOriginState());
@@ -67,12 +71,8 @@ public class DistanceService {
 			return null;
 		}
 		DistanceSetting setting = getOrCreateSettings();
-		Optional<CityGeocode> origin = geocodingService.getCached(setting.getOriginCity(), setting.getOriginState());
-		if (origin.isEmpty()) {
-			// Origem ainda nao resolvida: resolve agora (ponto unico) e segue.
-			origin = Optional.of(geocodingService.geocodeNow(setting.getOriginCity(), setting.getOriginState()));
-		}
-		if (origin.isEmpty() || !origin.get().isResolved()) {
+		double[] origin = originCoordinates(setting);
+		if (origin == null) {
 			return null;
 		}
 		String resolvedState = state == null || state.isBlank() ? setting.getOriginState() : state;
@@ -84,8 +84,43 @@ public class DistanceService {
 		if (!destination.get().isResolved()) {
 			return null;
 		}
-		return haversine(origin.get().getLatitude(), origin.get().getLongitude(),
+		return haversine(origin[0], origin[1],
 				destination.get().getLatitude(), destination.get().getLongitude());
+	}
+
+	/**
+	 * Coordenadas do ponto de origem: usa o ponto exato (lat/lng) definido no mapa quando existir;
+	 * caso contrario geocodifica a cidade/estado configurados. Retorna {@code null} se nao resolver.
+	 */
+	private double[] originCoordinates(DistanceSetting setting) {
+		if (setting.hasCoordinates()) {
+			return new double[] { setting.getOriginLatitude(), setting.getOriginLongitude() };
+		}
+		Optional<CityGeocode> origin = geocodingService.getCached(setting.getOriginCity(), setting.getOriginState());
+		if (origin.isEmpty()) {
+			origin = Optional.of(geocodingService.geocodeNow(setting.getOriginCity(), setting.getOriginState()));
+		}
+		if (origin.isEmpty() || !origin.get().isResolved()) {
+			return null;
+		}
+		return new double[] { origin.get().getLatitude(), origin.get().getLongitude() };
+	}
+
+	/** Define o ponto de origem por coordenadas (mapa). Limpa nada da cidade — mantida como rotulo. */
+	@Transactional
+	public DistanceSetting updateOriginPoint(double latitude, double longitude, String label, String city,
+			String state) {
+		DistanceSetting setting = getOrCreateSettings();
+		setting.setOriginLatitude(latitude);
+		setting.setOriginLongitude(longitude);
+		setting.setOriginLabel(label == null || label.isBlank() ? null : label.trim());
+		if (city != null && !city.isBlank()) {
+			setting.setOriginCity(city.trim());
+		}
+		if (state != null && !state.isBlank()) {
+			setting.setOriginState(state.trim());
+		}
+		return settingRepository.save(setting);
 	}
 
 	/** Geocodifica imediatamente a origem e a cidade informada (usado pelo warmup sob demanda). */

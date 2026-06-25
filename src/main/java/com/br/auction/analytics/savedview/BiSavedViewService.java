@@ -58,6 +58,20 @@ public class BiSavedViewService {
     }
 
     @Transactional
+    public BiSavedView setArchived(Long id, boolean archived) {
+        BiSavedView view = get(id);
+        view.setArchived(archived);
+        return repository.save(view);
+    }
+
+    @Transactional
+    public BiSavedView toggleArchived(Long id) {
+        BiSavedView view = get(id);
+        view.setArchived(!view.isArchived());
+        return repository.save(view);
+    }
+
+    @Transactional
     public BiSavedView toggleFavorite(Long id) {
         BiSavedView view = get(id);
         view.setFavorite(!view.isFavorite());

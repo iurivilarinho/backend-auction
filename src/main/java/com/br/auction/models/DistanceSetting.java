@@ -29,6 +29,18 @@ public class DistanceSetting {
 	@Schema(description = "Estado (sigla) da cidade de origem")
 	private String originState;
 
+	@Column
+	@Schema(description = "Latitude do ponto de origem (definido no mapa); tem prioridade sobre a cidade")
+	private Double originLatitude;
+
+	@Column
+	@Schema(description = "Longitude do ponto de origem (definido no mapa); tem prioridade sobre a cidade")
+	private Double originLongitude;
+
+	@Column(length = 200)
+	@Schema(description = "Rotulo/descricao do ponto de origem escolhido no mapa")
+	private String originLabel;
+
 	public Long getId() {
 		return id;
 	}
@@ -51,5 +63,34 @@ public class DistanceSetting {
 
 	public void setOriginState(String originState) {
 		this.originState = originState;
+	}
+
+	public Double getOriginLatitude() {
+		return originLatitude;
+	}
+
+	public void setOriginLatitude(Double originLatitude) {
+		this.originLatitude = originLatitude;
+	}
+
+	public Double getOriginLongitude() {
+		return originLongitude;
+	}
+
+	public void setOriginLongitude(Double originLongitude) {
+		this.originLongitude = originLongitude;
+	}
+
+	public String getOriginLabel() {
+		return originLabel;
+	}
+
+	public void setOriginLabel(String originLabel) {
+		this.originLabel = originLabel;
+	}
+
+	/** Verdadeiro quando ha um ponto (lat/lng) explicito definido no mapa. */
+	public boolean hasCoordinates() {
+		return originLatitude != null && originLongitude != null;
 	}
 }
