@@ -50,11 +50,16 @@ public class HqlQueryService {
     private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(HqlQueryService.class);
     private static final int MAX_ROWS = 1000;
     /**
-     * Entidades NAO expostas a IA: views/auxiliares (sem view, conforme pedido) e
-     * entidades que guardam segredos (chaves de IA, credenciais de integracao).
+     * Entidades NAO expostas a IA. Sao ocultadas: as views auxiliares {@code Bi*}; as que
+     * guardam segredos (chaves de IA, credenciais); o encanamento de integracao e os blobs
+     * (imagens/documentos) — esses ultimos nao tem valor analitico e so incham o prompt
+     * (cada token a mais conta no limite diario do provedor de IA).
      */
     private static final Set<String> EXCLUDED_ENTITIES = Set.of(
-            "BiVeiculo", "BiAquisicao", "BiGasto", "BiSavedView", "AiSettings", "Credential");
+            "BiVeiculo", "BiAquisicao", "BiGasto", "BiSavedView", "AiSettings", "Credential",
+            "AuctionItemImage", "AcquisitionDocument", "ExpenseQuote",
+            "Integration", "IntegrationRun", "IntegrationItemLog", "IntegrationSource",
+            "FieldMapping", "SourceModel", "SourceModelField");
 
     private final AiCompletionPort ai;
     private final ObjectMapper objectMapper;
@@ -206,7 +211,7 @@ public class HqlQueryService {
     /** Monta o schema (entidades + atributos) a partir do metamodelo JPA, expondo o banco inteiro. */
     private String schemaText() {
         StringBuilder sb = new StringBuilder(
-                "Voce consulta um modelo JPA de leiloes de veiculos. Entidades disponiveis (use SO estas):\n\n");
+                "Modelo JPA de leiloes de veiculos. Entidades (use SO estas), com seus atributos:\n\n");
         for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
             if (EXCLUDED_ENTITIES.contains(entity.getName())) {
                 continue;
@@ -217,7 +222,8 @@ public class HqlQueryService {
                 if (!firstAttr) {
                     sb.append(", ");
                 }
-                sb.append(attr.getName()).append(' ').append(attr.getJavaType().getSimpleName());
+                // So o nome do atributo (sem o tipo Java) — economiza tokens do provedor de IA.
+                sb.append(attr.getName());
                 firstAttr = false;
             }
             sb.append(")\n");
@@ -230,94 +236,45 @@ public class HqlQueryService {
     private String systemPrompt(String schema) {
         return schema + """
 
-                Voce enxerga o BANCO INTEIRO e gera HQL (Hibernate Query Language), juntando as
-                entidades acima livremente pelas associacoes. UM unico SELECT somente leitura:
-                - SEMPRE projecao explicita com alias em cada coluna
-                  (ex.: SELECT i.brand AS marca, count(i) AS total).
-                - pode usar group by, having, order by, subconsultas, count/sum/avg/min/max,
-                  funcoes de data (year(current_date), month(...)) e matematicas (cos, sin, acos, sqrt, least, greatest).
-                - HQL NAO tem LIMIT inline. Para "top N"/"os N primeiros", ordene e inclua
-                  "limit": N no JSON (o sistema aplica setMaxResults).
-                - NUNCA use UPDATE/DELETE/INSERT, nem ';'. NUNCA use SELECT *.
-                - Funcoes proibidas (NAO existem aqui): radians(), pi(), power()/pow(), greatest()/least() so com 1 arg.
-                  Para graus->radianos multiplique pela constante 0.017453292519943295.
-                - Para perguntas que envolvam DISTANCIA / "km" / "perto" / "raio" / "ponto de partida",
-                  COPIE EXATAMENTE o bloco "DISTANCIA" do glossario abaixo, mudando SO os filtros (condicao do
-                  lote, raio em km, status). NAO invente outra formula. Lat/lng SO existem em CityGeocode (g/og),
-                  nunca em Auction/AuctionItem.
-                - ORDER BY/WHERE NAO podem usar um alias do SELECT dentro de uma EXPRESSAO (ex.:
-                  ORDER BY (media - i.currentBidValue) e INVALIDO -> "Could not interpret path expression").
-                  Use o alias SOZINHO (ex.: ORDER BY distancia_km ASC, ORDER BY economia DESC) OU repita a
-                  expressao inteira. Para ordenar por "economia"/"custo-beneficio", crie a coluna economia
-                  com a funcao de media: (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia,
-                  e depois ORDER BY economia DESC NULLS LAST (a media pode ser nula quando nao ha historico
-                  daquele modelo; NULLS LAST joga esses casos pro fim em vez do topo).
+                Gere UM unico SELECT HQL (somente leitura) sobre as entidades acima, juntando-as pelas associacoes.
+                Regras:
+                - Projecao explicita com alias em CADA coluna. Nunca SELECT *, UPDATE/DELETE/INSERT nem ';'.
+                - "top N": ordene e ponha "limit": N no JSON (HQL nao tem LIMIT inline).
+                - ORDER BY/WHERE nao aceitam alias do SELECT dentro de expressao (erro "could not interpret path"):
+                  use o alias sozinho (ex.: ORDER BY economia DESC NULLS LAST) OU repita a expressao inteira.
+                - Texto case-insensitive com upper()/lower(). Dados: marca/modelo em MAIUSCULAS, cidade em minusculas.
+                - NAO use radians()/pi() (use a constante 0.017453292519943295 para pi/180).
 
-                GLOSSARIO / MODELO (use exatamente assim):
-                - Veiculo/lote = AuctionItem (i): brand (marca), model (modelo), vehicleYear (ano),
-                  vehicleDescription (descricao), lotType (condicao do lote), currentBidValue (lance atual),
-                  fipeValue (valor FIPE). Pertence a um leilao por i.auction (Auction).
-                - Leilao = Auction (a): city (cidade), stateCode (UF), status, closingDate (encerramento),
-                  auctioneer (patio/leiloeiro), providerCode. Navegue do item ao leilao por i.auction (ex.: JOIN i.auction a).
-                - ABERTO x ENCERRADO: a.status — 'Finalizado' = encerrado; os demais ('Publicado'/'Em Andamento')
-                  = aberto p/ lance. Para "comprar agora"/"disponivel hoje", filtre a.status <> 'Finalizado'.
-                - CONDICAO do lote (i.lotType): ex.: CONSERVADO, SUCATA, MONTA. Para "conservado",
-                  filtre upper(i.lotType) LIKE '%CONSERV%'.
-                - ADQUIRIDO/arrematado = Acquisition (aq): aq.auctionItem (o lote), acquisitionValue (valor pago),
-                  saleValue (valor de venda), status, acquiredAt, soldAt. Gasto = AcquisitionExpense (e): e.acquisition,
-                  type, value, status. LUCRO de um veiculo vendido = aq.saleValue - aq.acquisitionValue
-                  - (SELECT coalesce(sum(e.value),0) FROM AcquisitionExpense e WHERE e.acquisition = aq).
-                - PRECO DE REFERENCIA / "historico" / "quanto costuma sair/ser arrematado" / "abaixo do mercado" /
-                  "bom negocio": USE a funcao pronta media_finalizada_modelo(i.model) — ela ja devolve a media do
-                  preco REAL arrematado (avg do lance dos leiloes Finalizados) DAQUELE modelo exato. NAO calcule a
-                  media na mao com subconsulta/avg/group by: agrupar por ano ou marca infla a media (ex.: dava um
-                  UNO com media > 30 mil). Se a pergunta citar "pela regiao", use media_finalizada_regiao(i.model,
-                  a.stateCode). A media pode ser nula quando nao ha historico daquele modelo.
-                  Para "bom negocio agora", compare o lance do lote ABERTO com essa media:
-                  economia = media_finalizada_modelo(i.model) - i.currentBidValue (maior = melhor).
-                  Ex.: SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.currentBidValue AS lance,
-                              a.city AS cidade,
-                              media_finalizada_modelo(i.model) AS media_historica,
-                              (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia
-                       FROM AuctionItem i JOIN i.auction a
-                       WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
-                       ORDER BY economia DESC NULLS LAST (com "limit": N).
-                - DISTANCIA ate o ponto de partida (em km): USE a funcao pronta
-                  distance_km(lat_origem, lng_origem, lat_destino, lng_destino) — NAO escreva a formula
-                  trigonometrica na mao. O ponto de origem esta em DistanceSetting (ds, id=1) e suas coordenadas
-                  estao em CityGeocode por originCity/originState (alias og). As coordenadas da cidade do leilao
-                  estao em CityGeocode (alias g). Junte: a cidade do leilao por lower(g.city)=lower(a.city) AND
-                  upper(g.state)=upper(a.stateCode) AND g.resolved=true; e a origem por lower(og.city)=lower(ds.originCity)
-                  AND upper(og.state)=upper(ds.originState) AND og.resolved=true. A distancia e:
-                       distance_km(og.latitude, og.longitude, g.latitude, g.longitude)
-                  Ex. "melhor veiculo conservado, bom custo-beneficio, a menos de 400 km do ponto de partida":
-                       SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.lotType AS condicao,
-                              i.currentBidValue AS lance, a.city AS cidade,
-                              media_finalizada_modelo(i.model) AS media_historica,
-                              (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia,
-                              distance_km(og.latitude, og.longitude, g.latitude, g.longitude) AS distancia_km
-                       FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
-                       WHERE a = i.auction
-                         AND lower(g.city)=lower(a.city) AND upper(g.state)=upper(a.stateCode) AND g.resolved=true
-                         AND ds.id=1 AND lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState) AND og.resolved=true
-                         AND a.status <> 'Finalizado' AND upper(i.lotType) LIKE '%CONSERV%'
-                         AND distance_km(og.latitude, og.longitude, g.latitude, g.longitude) < 400
-                       ORDER BY economia DESC NULLS LAST (alias puro; ou ORDER BY distancia_km ASC) (com "limit": N).
-                - FILTROS DE TEXTO sempre case-insensitive: use upper()/lower(), ex.:
-                  upper(i.brand) = upper('Honda') ou lower(a.city) LIKE lower('%uberlandia%').
-                  Os dados estao com marca/modelo em MAIUSCULAS e cidade em minusculas.
-                - Nao existe campo que separe MOTO de CARRO. Se a pergunta exigir isso, faca o melhor esforco
-                  por modelos conhecidos (motos: HONDA CG/BIZ/POP/CB, YAMAHA YBR/FACTOR/FAZER, etc.; carros:
-                  GOL, UNO, PALIO, CLASSIC, FIESTA...) usando LIKE, ou explique que a base nao distingue.
+                Glossario:
+                - AuctionItem i = veiculo/lote: brand (marca), model (modelo), vehicleYear (ano), vehicleDescription,
+                  lotType (condicao: CONSERVADO/SUCATA/MONTA; "conservado" = upper(i.lotType) LIKE '%CONSERV%'),
+                  currentBidValue (lance atual), fipeValue. Leilao = i.auction (Auction a): city, stateCode (UF),
+                  status, closingDate, auctioneer, providerCode.
+                - Status: 'Finalizado' = encerrado; 'Publicado'/'Em Andamento' = aberto. "comprar agora" -> a.status <> 'Finalizado'.
+                - Acquisition aq (arrematado): aq.auctionItem, acquisitionValue, saleValue, status, acquiredAt, soldAt.
+                  Gasto = AcquisitionExpense e (e.acquisition, type, value). Lucro = aq.saleValue - aq.acquisitionValue
+                  - (select coalesce(sum(e.value),0) from AcquisitionExpense e where e.acquisition = aq).
+                - MEDIA HISTORICA ("quanto o modelo costuma ser arrematado" / referencia de mercado): use a FUNCAO
+                  media_finalizada_modelo(i.model) (ou media_finalizada_regiao(i.model, a.stateCode) p/ "pela regiao").
+                  NAO calcule a media na mao (agrupar por ano/marca infla). economia = media_finalizada_modelo(i.model) - i.currentBidValue.
+                - DISTANCIA em km: FUNCAO distance_km(og.latitude, og.longitude, g.latitude, g.longitude). Coordenadas
+                  SO existem em CityGeocode. Para perguntas com distancia/km/raio/"ponto de partida", copie este modelo
+                  e mude apenas os filtros:
+                    SELECT i.brand AS marca, i.model AS modelo, i.currentBidValue AS lance, a.city AS cidade,
+                           media_finalizada_modelo(i.model) AS media,
+                           (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia,
+                           distance_km(og.latitude, og.longitude, g.latitude, g.longitude) AS distancia_km
+                    FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
+                    WHERE a = i.auction AND lower(g.city)=lower(a.city) AND upper(g.state)=upper(a.stateCode) AND g.resolved=true
+                      AND ds.id=1 AND lower(og.city)=lower(ds.originCity) AND upper(og.state)=upper(ds.originState) AND og.resolved=true
+                      AND a.status <> 'Finalizado' AND distance_km(og.latitude, og.longitude, g.latitude, g.longitude) < 400
+                    ORDER BY economia DESC NULLS LAST
+                - Nao ha campo moto/carro; se preciso, use LIKE por modelos conhecidos.
 
-                Grafico: escolha o "type" adequado.
-                - "composed" (barra+linha): a 1a coluna de "series" vira barra; as demais, linha.
-                - "scatter" (dispersao): "x" e a 1a de "series" devem ser colunas numericas.
-
-                Responda SOMENTE com um JSON, sem texto fora dele:
-                {"hql":"<UM SELECT HQL, ou null se nao der>","limit":<N inteiro ou omita>,
-                 "chart":{"type":"bar|line|area|scatter|composed|pie|none","x":"<coluna>","series":["<coluna numerica>"],"title":"<titulo>"},
-                 "explanation":"<frase tecnica>","message":"<resposta curta ao usuario>"}
+                Grafico: "composed" = 1a serie barra, demais linha; "scatter" = x e 1a serie numericas.
+                Responda SO um JSON: {"hql":"<SELECT ou null>","limit":<N ou omita>,
+                "chart":{"type":"bar|line|area|scatter|composed|pie|none","x":"<col>","series":["<col>"],"title":"<t>"},
+                "explanation":"<tecnico>","message":"<resposta curta>"}
                 """;
     }
 
