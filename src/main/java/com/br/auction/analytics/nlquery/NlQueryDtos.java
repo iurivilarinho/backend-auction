@@ -48,7 +48,9 @@ public final class NlQueryDtos {
             /** true = a IA esta fora do ar. */
             boolean aiOffline,
             /** Resposta conversacional da IA (apresenta o resultado, recusa ou sugere). */
-            String message) {
+            String message,
+            /** "top N" aplicado (setMaxResults); guardado p/ reexecutar a visao salva igual. */
+            Integer limit) {
     }
 
     /** Disponibilidade do provedor de IA (para a tela escolher o modo). */
@@ -61,8 +63,8 @@ public final class NlQueryDtos {
     public record ExportRequest(String sql, String fileName) {
     }
 
-    /** Recarrega uma visao salva: reexecuta o HQL (revalidado) com o grafico salvo. */
+    /** Recarrega uma visao salva: reexecuta o HQL (revalidado) com o grafico e o limite salvos. */
     @Schema(name = "NlQueryRunRequest")
-    public record RunRequest(String sql, ChartSpec chart, String title) {
+    public record RunRequest(String sql, ChartSpec chart, String title, Integer limit) {
     }
 }

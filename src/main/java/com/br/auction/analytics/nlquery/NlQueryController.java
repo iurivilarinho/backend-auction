@@ -47,7 +47,7 @@ public class NlQueryController {
     @PostMapping("/run")
     @Operation(summary = "Reexecuta um HQL ja gerado (revalidado) para recarregar uma visao.")
     public NlQueryResponse run(@RequestBody RunRequest request) {
-        return service.run(request.sql(), request.chart(), request.title());
+        return service.run(request.sql(), request.chart(), request.title(), request.limit());
     }
 
     @PostMapping("/export")

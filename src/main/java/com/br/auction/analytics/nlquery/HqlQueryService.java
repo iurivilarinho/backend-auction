@@ -104,7 +104,8 @@ public class HqlQueryService {
                 ? "Nao encontrei nenhum resultado para esse pedido."
                 : friendly(outcome.plan.message, "Aqui esta o que encontrei.");
         return new NlQueryResponse(q, outcome.hql, outcome.plan.explanation, outcome.plan.chart,
-                outcome.result.columns(), outcome.result.rows(), outcome.result.rows().size(), true, false, message);
+                outcome.result.columns(), outcome.result.rows(), outcome.result.rows().size(), true, false, message,
+                outcome.plan.limit);
     }
 
     /** Executa o HQL; se falhar, pede UMA correcao a IA. Devolve null se nao der. */
@@ -130,11 +131,11 @@ public class HqlQueryService {
         }
     }
 
-    public NlQueryResponse run(String hql, ChartSpec chart, String title) {
+    public NlQueryResponse run(String hql, ChartSpec chart, String title, Integer limit) {
         String safe = guard.sanitize(hql, allowedEntityNames());
         QueryResult result;
         try {
-            result = execute(safe, null);
+            result = execute(safe, limit);
         } catch (RuntimeException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Nao foi possivel recarregar esta visao (a consulta salva falhou).");
@@ -142,7 +143,7 @@ public class HqlQueryService {
         ChartSpec safeChart = chart != null ? chart : new ChartSpec("none", null, List.of(), null);
         String name = title != null && !title.isBlank() ? title : "Visao salva";
         return new NlQueryResponse(name, safe, "", safeChart, result.columns(), result.rows(),
-                result.rows().size(), false, false, "Visao recarregada.");
+                result.rows().size(), false, false, "Visao recarregada.", limit);
     }
 
     public byte[] exportExcel(String hql) {
@@ -248,7 +249,7 @@ public class HqlQueryService {
                   ORDER BY (media - i.currentBidValue) e INVALIDO -> "Could not interpret path expression").
                   Use o alias SOZINHO (ex.: ORDER BY distancia_km ASC, ORDER BY economia DESC) OU repita a
                   expressao inteira. Para ordenar por "economia"/"custo-beneficio", crie a coluna economia
-                  REPETINDO a subconsulta da media: (<subconsulta_media> - i.currentBidValue) AS economia,
+                  com a funcao de media: (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia,
                   e depois ORDER BY economia DESC NULLS LAST (a media pode ser nula quando nao ha historico
                   daquele modelo; NULLS LAST joga esses casos pro fim em vez do topo).
 
@@ -266,22 +267,18 @@ public class HqlQueryService {
                   saleValue (valor de venda), status, acquiredAt, soldAt. Gasto = AcquisitionExpense (e): e.acquisition,
                   type, value, status. LUCRO de um veiculo vendido = aq.saleValue - aq.acquisitionValue
                   - (SELECT coalesce(sum(e.value),0) FROM AcquisitionExpense e WHERE e.acquisition = aq).
-                - PRECO DE REFERENCIA / "historico" / "quanto costuma sair" / "abaixo do mercado" / "bom negocio":
-                  fipeValue normalmente e 0 nesta base. NUNCA misture status na media: o currentBidValue de lotes
-                  ABERTOS ('Publicado'/'Em Andamento') e apenas o lance PARCIAL atual (baixo, ainda subindo) e nao
-                  serve de referencia. O preco que um modelo REALMENTE atingiu e o dos leiloes ENCERRADOS
-                  (a2.status = 'Finalizado') — essa e a media HISTORICA de mercado. Sempre arredonde: round(avg(...),2).
-                  Para "bom negocio agora", compare o lance de cada lote ABERTO com a media historica (finalizados)
-                  do MESMO modelo; economia = media_historica - currentBidValue (maior = melhor). Se a pergunta citar
-                  "pela regiao", restrinja o historico ao MESMO estado (a2.stateCode = a.stateCode).
+                - PRECO DE REFERENCIA / "historico" / "quanto costuma sair/ser arrematado" / "abaixo do mercado" /
+                  "bom negocio": USE a funcao pronta media_finalizada_modelo(i.model) — ela ja devolve a media do
+                  preco REAL arrematado (avg do lance dos leiloes Finalizados) DAQUELE modelo exato. NAO calcule a
+                  media na mao com subconsulta/avg/group by: agrupar por ano ou marca infla a media (ex.: dava um
+                  UNO com media > 30 mil). Se a pergunta citar "pela regiao", use media_finalizada_regiao(i.model,
+                  a.stateCode). A media pode ser nula quando nao ha historico daquele modelo.
+                  Para "bom negocio agora", compare o lance do lote ABERTO com essa media:
+                  economia = media_finalizada_modelo(i.model) - i.currentBidValue (maior = melhor).
                   Ex.: SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.currentBidValue AS lance,
                               a.city AS cidade,
-                              (SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
-                                 WHERE i2.model = i.model AND a2.status = 'Finalizado'
-                                 AND a2.stateCode = a.stateCode) AS media_historica_regiao,
-                              ((SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
-                                 WHERE i2.model = i.model AND a2.status = 'Finalizado'
-                                 AND a2.stateCode = a.stateCode) - i.currentBidValue) AS economia
+                              media_finalizada_modelo(i.model) AS media_historica,
+                              (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia
                        FROM AuctionItem i JOIN i.auction a
                        WHERE a.status <> 'Finalizado' AND i.currentBidValue > 0
                        ORDER BY economia DESC NULLS LAST (com "limit": N).
@@ -296,10 +293,8 @@ public class HqlQueryService {
                   Ex. "melhor veiculo conservado, bom custo-beneficio, a menos de 400 km do ponto de partida":
                        SELECT i.brand AS marca, i.model AS modelo, i.vehicleYear AS ano, i.lotType AS condicao,
                               i.currentBidValue AS lance, a.city AS cidade,
-                              (SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
-                                 WHERE i2.model = i.model AND a2.status = 'Finalizado') AS media_historica,
-                              ((SELECT round(avg(i2.currentBidValue),2) FROM AuctionItem i2 JOIN i2.auction a2
-                                 WHERE i2.model = i.model AND a2.status = 'Finalizado') - i.currentBidValue) AS economia,
+                              media_finalizada_modelo(i.model) AS media_historica,
+                              (media_finalizada_modelo(i.model) - i.currentBidValue) AS economia,
                               distance_km(og.latitude, og.longitude, g.latitude, g.longitude) AS distancia_km
                        FROM AuctionItem i, Auction a, CityGeocode g, DistanceSetting ds, CityGeocode og
                        WHERE a = i.auction
@@ -395,7 +390,7 @@ public class HqlQueryService {
 
     private NlQueryResponse messageOnly(String question, String message, boolean aiOffline) {
         return new NlQueryResponse(question, null, "", new ChartSpec("none", null, List.of(), null),
-                List.of(), List.of(), 0, false, aiOffline, message);
+                List.of(), List.of(), 0, false, aiOffline, message, null);
     }
 
     private String friendly(String aiMessage, String fallback) {
