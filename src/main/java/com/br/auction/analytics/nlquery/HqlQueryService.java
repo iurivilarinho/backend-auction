@@ -244,6 +244,9 @@ public class HqlQueryService {
                   use o alias sozinho (ex.: ORDER BY economia DESC NULLS LAST) OU repita a expressao inteira.
                 - Texto case-insensitive com upper()/lower(). Dados: marca/modelo em MAIUSCULAS, cidade em minusculas.
                 - NAO use radians()/pi() (use a constante 0.017453292519943295 para pi/180).
+                - distance_km(...), media_finalizada_modelo(...) e media_finalizada_regiao(...) sao FUNCOES:
+                  chame-as no SELECT/WHERE/ORDER BY. NUNCA as coloque no FROM nem as trate como entidade.
+                  Nunca escreva LIMIT no HQL (use o campo "limit" do JSON).
 
                 Glossario:
                 - AuctionItem i = veiculo/lote: brand (marca), model (modelo), vehicleYear (ano), vehicleDescription,
