@@ -16,8 +16,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class AiCompletionRouter implements AiCompletionPort {
 
+    /** Janela em que consideramos a IA "no ar" apos um sucesso, sem re-sondar. */
+    private static final long OK_CACHE_MS = 120_000;
+
     private final AiSettingsService settingsService;
     private final Map<AiProvider, AiProviderClient> clients = new EnumMap<>(AiProvider.class);
+
+    /**
+     * Momento do ultimo sucesso (completude ou sonda). Evita o "IA fora" intermitente:
+     * provedores locais single-thread (ex.: gpt-cli) nao respondem o /status enquanto
+     * processam uma pergunta, o que derrubava o health justo durante o uso.
+     */
+    private volatile long lastOkAt = 0L;
 
     public AiCompletionRouter(AiSettingsService settingsService, List<AiProviderClient> providerClients) {
         this.settingsService = settingsService;
@@ -29,12 +39,16 @@ public class AiCompletionRouter implements AiCompletionPort {
     @Override
     public String complete(String systemPrompt, String userPrompt) {
         AiSettings settings = settingsService.effective();
-        return client(settings.getProvider()).complete(settings, systemPrompt, userPrompt);
+        String result = client(settings.getProvider()).complete(settings, systemPrompt, userPrompt);
+        lastOkAt = System.currentTimeMillis();
+        return result;
     }
 
     /** Executa uma completude com uma configuracao especifica (usado no teste de conexao). */
     public String completeWith(AiSettings settings, String systemPrompt, String userPrompt) {
-        return client(settings.getProvider()).complete(settings, systemPrompt, userPrompt);
+        String result = client(settings.getProvider()).complete(settings, systemPrompt, userPrompt);
+        lastOkAt = System.currentTimeMillis();
+        return result;
     }
 
     @Override
@@ -44,8 +58,17 @@ public class AiCompletionRouter implements AiCompletionPort {
 
     @Override
     public boolean isAvailable() {
+        // Se uma pergunta/sonda funcionou ha pouco, nao re-sonda (o provedor pode estar
+        // ocupado respondendo outra pergunta agora e falsamente parecer "fora").
+        if (System.currentTimeMillis() - lastOkAt < OK_CACHE_MS) {
+            return true;
+        }
         AiSettings settings = settingsService.effective();
-        return client(settings.getProvider()).isAvailable(settings);
+        boolean ok = client(settings.getProvider()).isAvailable(settings);
+        if (ok) {
+            lastOkAt = System.currentTimeMillis();
+        }
+        return ok;
     }
 
     /** Sonda a disponibilidade de uma configuracao especifica (teste de conexao). */
