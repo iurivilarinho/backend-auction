@@ -24,6 +24,7 @@ import com.br.auction.notification.WhatsappNotifier;
 import com.br.auction.notification.WhatsappNotifier.SendResult;
 import com.br.auction.service.DistanceService;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -130,6 +131,24 @@ public class AlertEvaluator {
 			LOG.info("Alerta {} ({}): {} envio(s) para {} destino(s), {} gatilho(s).",
 					alert.getId(), alert.getName(), sent, recipients.size(), triggered);
 		}
+	}
+
+	/**
+	 * Lotes que um alerta encontra agora (passam pelo criterio + raio + gatilho), sem enviar nada —
+	 * usado pela tela de "Achados". Limitado para nao carregar listas enormes.
+	 */
+	public List<AuctionItem> findMatches(VehicleAlert alert, int limit) {
+		LocalDateTime now = LocalDateTime.now();
+		List<AuctionItem> out = new ArrayList<>();
+		for (AuctionItem item : alertService.findCandidates(alert)) {
+			if (matchesRadius(alert, item) && triggers(alert, item, now)) {
+				out.add(item);
+				if (out.size() >= limit) {
+					break;
+				}
+			}
+		}
+		return out;
 	}
 
 	// ---------------------------------- Gatilhos por tipo ----------------------------------

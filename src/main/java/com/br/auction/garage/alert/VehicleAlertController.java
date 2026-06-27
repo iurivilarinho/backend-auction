@@ -30,10 +30,13 @@ public class VehicleAlertController {
 
 	private final VehicleAlertService service;
 	private final AlertScheduler scheduler;
+	private final AlertFindingService findingService;
 
-	public VehicleAlertController(VehicleAlertService service, AlertScheduler scheduler) {
+	public VehicleAlertController(VehicleAlertService service, AlertScheduler scheduler,
+			AlertFindingService findingService) {
 		this.service = service;
 		this.scheduler = scheduler;
+		this.findingService = findingService;
 	}
 
 	@Operation(summary = "Listar alertas")
@@ -59,6 +62,18 @@ public class VehicleAlertController {
 	public ResponseEntity<Void> run() {
 		scheduler.triggerNow();
 		return ResponseEntity.accepted().build();
+	}
+
+	@Operation(summary = "Achados: veiculos encontrados pelos alertas (todos)")
+	@GetMapping("/findings")
+	public ResponseEntity<List<AlertFindingResponse>> findings() {
+		return ResponseEntity.ok(findingService.findAll());
+	}
+
+	@Operation(summary = "Achados de um alerta especifico")
+	@GetMapping("/{id}/findings")
+	public ResponseEntity<List<AlertFindingResponse>> findingsByAlert(@PathVariable Long id) {
+		return ResponseEntity.ok(findingService.findByAlert(id));
 	}
 
 	@Operation(summary = "Criar alerta")

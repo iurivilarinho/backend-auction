@@ -70,6 +70,11 @@ public class VehicleAlertService {
 		return auctionItemRepository.findAll(AlertSpecifications.forAlert(alert));
 	}
 
+	public boolean wasNotified(VehicleAlert alert, Long auctionItemId) {
+		return notificationRepository.existsByAlertIdAndTriggerKey(alert.getId(),
+				alert.getType().name() + ":" + auctionItemId);
+	}
+
 	private void apply(VehicleAlert alert, VehicleAlertRequest request) {
 		alert.setName(request.getName());
 		alert.setType(request.getType() == null ? AlertType.NEW_MATCH : request.getType());
