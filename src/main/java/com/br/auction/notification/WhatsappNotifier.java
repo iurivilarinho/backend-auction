@@ -1,6 +1,7 @@
 package com.br.auction.notification;
 
 import java.time.Duration;
+import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,64 +9,85 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
-
-import java.util.Map;
 
 /**
  * Canal de envio de mensagens via WhatsApp usando a Evolution API (gateway nao oficial, self-host).
  * O backend nunca fala com o WhatsApp direto: monta o texto e entrega para a Evolution, que mantem
- * a sessao (Baileys) e faz a entrega. Mantido isolado para que o resto da aplicacao so dependa de
- * {@link #send(String, String)}.
+ * a sessao (Baileys) e faz a entrega.
+ *
+ * <p>Infra (base-url, api-key, instancia) vem de variavel de ambiente. As preferencias editaveis na
+ * tela (ligar/desligar e numero de destino) ficam em {@link NotificationSettings} no banco e tem
+ * prioridade sobre os defaults de ambiente — assim o usuario muda em runtime sem redeploy.
  */
 @Service
 public class WhatsappNotifier {
 
 	private static final Logger LOG = LoggerFactory.getLogger(WhatsappNotifier.class);
 
-	private final boolean enabled;
+	private final boolean envEnabled;
 	private final String baseUrl;
 	private final String apiKey;
 	private final String instance;
-	private final String defaultRecipient;
+	private final String envRecipient;
 	private final RestClient restClient;
+	private final NotificationSettingsRepository settingsRepository;
 
 	public WhatsappNotifier(
-			@Value("${whatsapp.enabled:false}") boolean enabled,
-			@Value("${whatsapp.evolution.base-url:http://localhost:8090}") String baseUrl,
+			@Value("${whatsapp.enabled:false}") boolean envEnabled,
+			@Value("${whatsapp.evolution.base-url:http://localhost:8091}") String baseUrl,
 			@Value("${whatsapp.evolution.api-key:}") String apiKey,
 			@Value("${whatsapp.evolution.instance:leiloes}") String instance,
-			@Value("${whatsapp.recipient:}") String defaultRecipient) {
-		this.enabled = enabled;
+			@Value("${whatsapp.recipient:}") String envRecipient,
+			NotificationSettingsRepository settingsRepository) {
+		this.envEnabled = envEnabled;
 		this.baseUrl = stripTrailingSlash(baseUrl);
 		this.apiKey = apiKey;
 		this.instance = instance;
-		this.defaultRecipient = normalizeNumber(defaultRecipient);
+		this.envRecipient = normalizeNumber(envRecipient);
+		this.settingsRepository = settingsRepository;
 		SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
 		factory.setConnectTimeout((int) Duration.ofSeconds(10).toMillis());
 		factory.setReadTimeout((int) Duration.ofSeconds(30).toMillis());
 		this.restClient = RestClient.builder().requestFactory(factory).build();
 	}
 
+	// ---------------------------------- Preferencias (DB > env) ----------------------------------
+
+	/** Canal ligado: usa o valor salvo no banco; cai no default de ambiente quando ainda nao ha linha. */
+	@Transactional(readOnly = true)
 	public boolean isEnabled() {
-		return enabled;
+		NotificationSettings settings = settingsRepository.findById(NotificationSettings.SINGLETON_ID).orElse(null);
+		return settings != null && settings.getEnabled() != null ? settings.getEnabled() : envEnabled;
 	}
 
+	/** API key presente (configuracao minima de infra para falar com a Evolution). */
+	public boolean hasApiKey() {
+		return !apiKey.isBlank();
+	}
+
+	/** Pronto para enviar: ligado e com api-key. */
 	public boolean isConfigured() {
-		return enabled && !apiKey.isBlank();
+		return isEnabled() && hasApiKey();
 	}
 
 	public String getInstance() {
 		return instance;
 	}
 
+	@Transactional(readOnly = true)
 	public String getDefaultRecipient() {
-		return defaultRecipient;
+		NotificationSettings settings = settingsRepository.findById(NotificationSettings.SINGLETON_ID).orElse(null);
+		String recipient = settings != null ? settings.getRecipient() : null;
+		return normalizeNumber(recipient != null && !recipient.isBlank() ? recipient : envRecipient);
 	}
 
-	/** Envia para o destinatario global configurado em {@code whatsapp.recipient}. */
+	// ---------------------------------- Envio ----------------------------------
+
+	/** Envia para o destinatario global configurado. */
 	public SendResult send(String text) {
-		return send(defaultRecipient, text);
+		return send(getDefaultRecipient(), text);
 	}
 
 	/**
@@ -75,19 +97,18 @@ public class WhatsappNotifier {
 	 */
 	public SendResult send(String number, String text) {
 		String to = normalizeNumber(number);
-		if (!enabled) {
-			return SendResult.skipped("Canal WhatsApp desativado (whatsapp.enabled=false).");
+		if (!isEnabled()) {
+			return SendResult.skipped("Canal WhatsApp desativado.");
 		}
 		if (apiKey.isBlank()) {
 			return SendResult.skipped("API key da Evolution nao configurada (whatsapp.evolution.api-key).");
 		}
 		if (to.isBlank()) {
-			return SendResult.skipped("Destinatario nao informado e whatsapp.recipient vazio.");
+			return SendResult.skipped("Destinatario nao informado e numero global vazio.");
 		}
-		String url = baseUrl + "/message/sendText/" + instance;
 		try {
 			restClient.post()
-					.uri(url)
+					.uri(baseUrl + "/message/sendText/" + instance)
 					.header("apikey", apiKey)
 					.contentType(MediaType.APPLICATION_JSON)
 					.body(Map.of("number", to, "text", text))
@@ -98,6 +119,125 @@ public class WhatsappNotifier {
 		} catch (RuntimeException ex) {
 			LOG.warn("Falha ao enviar WhatsApp para {}: {}", to, ex.getMessage());
 			return SendResult.failed(ex.getMessage());
+		}
+	}
+
+	// ---------------------------------- Consulta a Evolution (status/QR) ----------------------------------
+
+	/** Estado da conexao da instancia: "open" (logada), "connecting", "close"... ou null se indisponivel. */
+	public String connectionState() {
+		if (apiKey.isBlank()) {
+			return null;
+		}
+		try {
+			Map<?, ?> body = restClient.get()
+					.uri(baseUrl + "/instance/connectionState/" + instance)
+					.header("apikey", apiKey)
+					.retrieve()
+					.body(Map.class);
+			Object inst = body == null ? null : body.get("instance");
+			if (inst instanceof Map<?, ?> instMap) {
+				Object state = instMap.get("state");
+				return state == null ? null : state.toString();
+			}
+			return null;
+		} catch (RuntimeException ex) {
+			LOG.warn("Falha ao consultar estado da instancia {}: {}", instance, ex.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Garante que a instancia exista e devolve o QR para parear (base64 + pairingCode) e o estado.
+	 * Quando ja esta logada, a Evolution responde sem QR e o estado vem "open".
+	 */
+	public Map<String, Object> connect() {
+		if (apiKey.isBlank()) {
+			return Map.of("error", "API key da Evolution nao configurada.");
+		}
+		ensureInstance();
+		try {
+			Map<?, ?> body = restClient.get()
+					.uri(baseUrl + "/instance/connect/" + instance)
+					.header("apikey", apiKey)
+					.retrieve()
+					.body(Map.class);
+			if (body == null) {
+				return Map.of();
+			}
+			java.util.HashMap<String, Object> out = new java.util.HashMap<>();
+			out.put("base64", body.get("base64"));
+			out.put("pairingCode", body.get("pairingCode"));
+			out.put("code", body.get("code"));
+			out.put("state", connectionState());
+			return out;
+		} catch (RuntimeException ex) {
+			LOG.warn("Falha ao obter QR da instancia {}: {}", instance, ex.getMessage());
+			return Map.of("error", ex.getMessage());
+		}
+	}
+
+	/** Desconecta (logout) a instancia para parear outro numero. */
+	public boolean logout() {
+		if (apiKey.isBlank()) {
+			return false;
+		}
+		try {
+			restClient.delete()
+					.uri(baseUrl + "/instance/logout/" + instance)
+					.header("apikey", apiKey)
+					.retrieve()
+					.toBodilessEntity();
+			return true;
+		} catch (RuntimeException ex) {
+			LOG.warn("Falha ao desconectar instancia {}: {}", instance, ex.getMessage());
+			return false;
+		}
+	}
+
+	/** Lista os grupos em que o numero logado participa: [{ id (JID), subject }]. */
+	@SuppressWarnings("unchecked")
+	public java.util.List<Map<String, Object>> listGroups() {
+		if (apiKey.isBlank()) {
+			return java.util.List.of();
+		}
+		try {
+			Object body = restClient.get()
+					.uri(baseUrl + "/group/fetchAllGroups/" + instance + "?getParticipants=false")
+					.header("apikey", apiKey)
+					.retrieve()
+					.body(Object.class);
+			java.util.List<Map<String, Object>> groups = new java.util.ArrayList<>();
+			if (body instanceof java.util.List<?> list) {
+				for (Object item : list) {
+					if (item instanceof Map<?, ?> map) {
+						Object subject = map.get("subject");
+						groups.add(Map.of(
+								"id", String.valueOf(map.get("id")),
+								"subject", subject == null ? "" : subject.toString()));
+					}
+				}
+			}
+			return groups;
+		} catch (RuntimeException ex) {
+			LOG.warn("Falha ao listar grupos da instancia {}: {}", instance, ex.getMessage());
+			return java.util.List.of();
+		}
+	}
+
+	/** Cria a instancia se ainda nao existir (idempotente). */
+	private void ensureInstance() {
+		try {
+			restClient.post()
+					.uri(baseUrl + "/instance/create")
+					.header("apikey", apiKey)
+					.contentType(MediaType.APPLICATION_JSON)
+					.body(Map.of("instanceName", instance, "integration", "WHATSAPP-BAILEYS", "qrcode", true))
+					.retrieve()
+					.toBodilessEntity();
+		} catch (RuntimeException ex) {
+			// Ja existe (Evolution responde 403/409): segue para o connect normalmente.
+			LOG.debug("Instancia {} ja existe ou create ignorado: {}", instance, ex.getMessage());
 		}
 	}
 

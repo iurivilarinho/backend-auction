@@ -19,9 +19,12 @@ import com.br.auction.garage.repository.AlertNotificationRepository;
 import com.br.auction.garage.repository.VehicleAlertRepository;
 import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
+import com.br.auction.notification.NotificationService;
 import com.br.auction.notification.WhatsappNotifier;
 import com.br.auction.notification.WhatsappNotifier.SendResult;
 import com.br.auction.service.DistanceService;
+
+import java.util.List;
 
 /**
  * Coracao do motor de alertas: para cada alerta ativo, seleciona os lotes candidatos, aplica o
@@ -42,12 +45,13 @@ public class AlertEvaluator {
 	private final AlertNotificationRepository notificationRepository;
 	private final DistanceService distanceService;
 	private final WhatsappNotifier notifier;
+	private final NotificationService notificationService;
 	private final int maxPerRun;
 	private final long sendDelayMs;
 
 	public AlertEvaluator(VehicleAlertRepository alertRepository, VehicleAlertService alertService,
 			AlertNotificationRepository notificationRepository, DistanceService distanceService,
-			WhatsappNotifier notifier,
+			WhatsappNotifier notifier, NotificationService notificationService,
 			@Value("${whatsapp.alert.max-per-run:10}") int maxPerRun,
 			@Value("${whatsapp.alert.send-delay-ms:2500}") long sendDelayMs) {
 		this.alertRepository = alertRepository;
@@ -55,6 +59,7 @@ public class AlertEvaluator {
 		this.notificationRepository = notificationRepository;
 		this.distanceService = distanceService;
 		this.notifier = notifier;
+		this.notificationService = notificationService;
 		this.maxPerRun = maxPerRun;
 		this.sendDelayMs = sendDelayMs;
 	}
@@ -76,16 +81,18 @@ public class AlertEvaluator {
 	}
 
 	private void evaluateAlert(VehicleAlert alert, LocalDateTime now) {
+		List<String> recipients = notificationService.resolveRecipients(alert);
+		if (recipients.isEmpty()) {
+			LOG.debug("Alerta {} sem destinos habilitados; ignorado.", alert.getId());
+			return;
+		}
 		int sent = 0;
-		int candidates = 0;
+		int triggered = 0;
 		for (AuctionItem item : alertService.findCandidates(alert)) {
-			if (!matchesRadius(alert, item)) {
+			if (!matchesRadius(alert, item) || !triggers(alert, item, now)) {
 				continue;
 			}
-			if (!triggers(alert, item, now)) {
-				continue;
-			}
-			candidates++;
+			triggered++;
 			String triggerKey = alert.getType().name() + ":" + item.getId();
 			if (notificationRepository.existsByAlertIdAndTriggerKey(alert.getId(), triggerKey)) {
 				continue;
@@ -95,20 +102,33 @@ public class AlertEvaluator {
 						alert.getId(), maxPerRun);
 				break;
 			}
-			SendResult result = notifier.send(recipient(alert), buildMessage(alert, item));
-			if (result.isSent()) {
+			String message = buildMessage(alert, item);
+			boolean anySent = false;
+			String detail = null;
+			for (String to : recipients) {
+				SendResult result = notifier.send(to, message);
+				detail = result.getDetail();
+				if (result.isSent()) {
+					anySent = true;
+					sent++;
+					pace();
+				} else {
+					LOG.warn("Alerta {} item {} para {} nao enviado: {}", alert.getId(), item.getId(), to,
+							result.getDetail());
+				}
+				if (sent >= maxPerRun) {
+					break;
+				}
+			}
+			if (anySent) {
+				// Dedup por gatilho (alerta+item): vale para todos os destinos desta rodada.
 				notificationRepository.save(new AlertNotification(alert.getId(), item.getId(), triggerKey,
-						result.getStatus().name(), result.getDetail()));
-				sent++;
-				pace();
-			} else {
-				// Nao registra: permite reenvio na proxima rodada quando o canal voltar.
-				LOG.warn("Alerta {} item {} nao enviado: {}", alert.getId(), item.getId(), result.getDetail());
+						SendResult.Status.SENT.name(), detail));
 			}
 		}
 		if (sent > 0) {
-			LOG.info("Alerta {} ({}): {} notificacao(oes) enviada(s) de {} gatilho(s).",
-					alert.getId(), alert.getName(), sent, candidates);
+			LOG.info("Alerta {} ({}): {} envio(s) para {} destino(s), {} gatilho(s).",
+					alert.getId(), alert.getName(), sent, recipients.size(), triggered);
 		}
 	}
 
@@ -253,10 +273,6 @@ public class AlertEvaluator {
 		}
 		sb.append(notBlank(item.getVehicleDescription()) ? item.getVehicleDescription() : "Veiculo");
 		return sb.toString();
-	}
-
-	private String recipient(VehicleAlert alert) {
-		return notBlank(alert.getRecipientPhone()) ? alert.getRecipientPhone() : notifier.getDefaultRecipient();
 	}
 
 	private static LocalDateTime closingDate(AuctionItem item) {
