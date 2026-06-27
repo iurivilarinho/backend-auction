@@ -14,6 +14,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 @Entity
@@ -93,15 +94,26 @@ public class VehicleAlert {
 	@Column(nullable = false)
 	private LocalDateTime createdAt;
 
+	// Sem nullable=false: a coluna e adicionada via ddl-auto=update em tabela ja populada;
+	// o @PrePersist/@PreUpdate preenchem o valor a partir daqui.
+	@Column
+	private LocalDateTime updatedAt;
+
 	@PrePersist
 	public void onCreate() {
 		this.createdAt = LocalDateTime.now();
+		this.updatedAt = this.createdAt;
 		if (this.active == null) {
 			this.active = Boolean.TRUE;
 		}
 		if (this.type == null) {
 			this.type = AlertType.NEW_MATCH;
 		}
+	}
+
+	@PreUpdate
+	public void onUpdate() {
+		this.updatedAt = LocalDateTime.now();
 	}
 
 	public Long getId() {
@@ -230,5 +242,9 @@ public class VehicleAlert {
 
 	public LocalDateTime getCreatedAt() {
 		return createdAt;
+	}
+
+	public LocalDateTime getUpdatedAt() {
+		return updatedAt;
 	}
 }

@@ -6,6 +6,8 @@ import java.text.NumberFormat;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 import org.slf4j.Logger;
@@ -13,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.br.auction.garage.enums.AlertType;
 import com.br.auction.garage.models.AlertNotification;
 import com.br.auction.garage.models.VehicleAlert;
 import com.br.auction.garage.repository.AlertNotificationRepository;
@@ -23,9 +26,6 @@ import com.br.auction.notification.NotificationService;
 import com.br.auction.notification.WhatsappNotifier;
 import com.br.auction.notification.WhatsappNotifier.SendResult;
 import com.br.auction.service.DistanceService;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Coracao do motor de alertas: para cada alerta ativo, seleciona os lotes candidatos, aplica o
@@ -269,7 +269,7 @@ public class AlertEvaluator {
 		}
 	}
 
-	private static String emoji(com.br.auction.garage.enums.AlertType type) {
+	private static String emoji(AlertType type) {
 		switch (type) {
 		case CLOSING_SOON:
 			return "⏰"; // relogio

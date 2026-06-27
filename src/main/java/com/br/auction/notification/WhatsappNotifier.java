@@ -1,6 +1,9 @@
 package com.br.auction.notification;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.slf4j.Logger;
@@ -210,7 +213,7 @@ public class WhatsappNotifier {
 			if (body == null) {
 				return Map.of();
 			}
-			java.util.HashMap<String, Object> out = new java.util.HashMap<>();
+			HashMap<String, Object> out = new HashMap<>();
 			out.put("base64", body.get("base64"));
 			out.put("pairingCode", body.get("pairingCode"));
 			out.put("code", body.get("code"));
@@ -241,10 +244,9 @@ public class WhatsappNotifier {
 	}
 
 	/** Lista os grupos em que o numero logado participa: [{ id (JID), subject }]. */
-	@SuppressWarnings("unchecked")
-	public java.util.List<Map<String, Object>> listGroups() {
+	public List<Map<String, Object>> listGroups() {
 		if (apiKey.isBlank()) {
-			return java.util.List.of();
+			return List.of();
 		}
 		try {
 			Object body = restClient.get()
@@ -252,8 +254,8 @@ public class WhatsappNotifier {
 					.header("apikey", apiKey)
 					.retrieve()
 					.body(Object.class);
-			java.util.List<Map<String, Object>> groups = new java.util.ArrayList<>();
-			if (body instanceof java.util.List<?> list) {
+			List<Map<String, Object>> groups = new ArrayList<>();
+			if (body instanceof List<?> list) {
 				for (Object item : list) {
 					if (item instanceof Map<?, ?> map) {
 						Object subject = map.get("subject");

@@ -28,10 +28,12 @@ public class VehicleAlertService {
 		this.notificationRepository = notificationRepository;
 	}
 
+	@Transactional(readOnly = true)
 	public List<VehicleAlert> findAll() {
 		return repository.findAllByOrderByCreatedAtDesc();
 	}
 
+	@Transactional(readOnly = true)
 	public VehicleAlert findById(Long id) {
 		return repository.findById(id)
 				.orElseThrow(() -> new EntityNotFoundException("Alerta nao encontrado: " + id));
@@ -62,14 +64,17 @@ public class VehicleAlertService {
 	 * Conta quantos veiculos atualmente atendem ao criterio de selecao do alerta (ignora o raio,
 	 * que depende de geocodificacao). Da uma ideia do alcance do alerta na tela.
 	 */
+	@Transactional(readOnly = true)
 	public int countMatches(VehicleAlert alert) {
 		return (int) auctionItemRepository.count(AlertSpecifications.forAlert(alert));
 	}
 
-	List<AuctionItem> findCandidates(VehicleAlert alert) {
+	@Transactional(readOnly = true)
+	public List<AuctionItem> findCandidates(VehicleAlert alert) {
 		return auctionItemRepository.findAll(AlertSpecifications.forAlert(alert));
 	}
 
+	@Transactional(readOnly = true)
 	public boolean wasNotified(VehicleAlert alert, Long auctionItemId) {
 		return notificationRepository.existsByAlertIdAndTriggerKey(alert.getId(),
 				alert.getType().name() + ":" + auctionItemId);

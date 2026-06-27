@@ -11,6 +11,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 /**
@@ -47,15 +48,25 @@ public class NotificationDestination {
 	@Column(nullable = false)
 	private LocalDateTime createdAt;
 
+	// Sem nullable=false: coluna adicionada via ddl-auto=update; preenchida pelo @PrePersist/@PreUpdate.
+	@Column
+	private LocalDateTime updatedAt;
+
 	@PrePersist
 	public void onCreate() {
 		this.createdAt = LocalDateTime.now();
+		this.updatedAt = this.createdAt;
 		if (this.enabled == null) {
 			this.enabled = Boolean.TRUE;
 		}
 		if (this.type == null) {
 			this.type = DestinationType.CONTACT;
 		}
+	}
+
+	@PreUpdate
+	public void onUpdate() {
+		this.updatedAt = LocalDateTime.now();
 	}
 
 	public Long getId() {
@@ -96,5 +107,9 @@ public class NotificationDestination {
 
 	public LocalDateTime getCreatedAt() {
 		return createdAt;
+	}
+
+	public LocalDateTime getUpdatedAt() {
+		return updatedAt;
 	}
 }

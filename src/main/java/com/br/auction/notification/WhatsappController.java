@@ -21,6 +21,7 @@ import com.br.auction.notification.WhatsappNotifier.SendResult;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 /**
  * Operacao do canal WhatsApp pela tela de Parametros: status/conexao, QR para parear, gestao de
@@ -57,7 +58,7 @@ public class WhatsappController {
 
 	@Operation(summary = "Ligar/desligar o canal")
 	@PutMapping("/settings")
-	public ResponseEntity<Map<String, Object>> updateSettings(@RequestBody SettingsRequest request) {
+	public ResponseEntity<Map<String, Object>> updateSettings(@RequestBody WhatsappSettingsRequest request) {
 		boolean enabled = request != null && Boolean.TRUE.equals(request.getEnabled());
 		service.updateEnabled(enabled);
 		return ResponseEntity.ok(Map.of("enabled", enabled));
@@ -72,8 +73,7 @@ public class WhatsappController {
 	@Operation(summary = "Desconectar o numero (logout)")
 	@PostMapping("/logout")
 	public ResponseEntity<Map<String, Object>> logout() {
-		boolean ok = notifier.logout();
-		return ResponseEntity.ok(Map.of("success", ok));
+		return ResponseEntity.ok(Map.of("success", notifier.logout()));
 	}
 
 	@Operation(summary = "Listar grupos do numero logado")
@@ -86,25 +86,26 @@ public class WhatsappController {
 
 	@Operation(summary = "Listar destinos")
 	@GetMapping("/destinations")
-	public ResponseEntity<List<DestinationResponse>> listDestinations() {
-		return ResponseEntity.ok(service.findDestinations().stream().map(DestinationResponse::new).toList());
+	public ResponseEntity<List<NotificationDestinationResponse>> listDestinations() {
+		return ResponseEntity.ok(service.findDestinations().stream().map(NotificationDestinationResponse::new).toList());
 	}
 
 	@Operation(summary = "Criar destino")
 	@PostMapping("/destinations")
-	public ResponseEntity<DestinationResponse> createDestination(@RequestBody DestinationRequest request) {
+	public ResponseEntity<NotificationDestinationResponse> createDestination(
+			@Valid @RequestBody NotificationDestinationRequest request) {
 		NotificationDestination created = service.createDestination(request.getLabel(), request.getType(),
 				request.getValue(), request.getEnabled());
-		return ResponseEntity.status(HttpStatus.CREATED).body(new DestinationResponse(created));
+		return ResponseEntity.status(HttpStatus.CREATED).body(new NotificationDestinationResponse(created));
 	}
 
 	@Operation(summary = "Atualizar destino")
 	@PutMapping("/destinations/{id}")
-	public ResponseEntity<DestinationResponse> updateDestination(@PathVariable Long id,
-			@RequestBody DestinationRequest request) {
+	public ResponseEntity<NotificationDestinationResponse> updateDestination(@PathVariable Long id,
+			@Valid @RequestBody NotificationDestinationRequest request) {
 		NotificationDestination updated = service.updateDestination(id, request.getLabel(), request.getType(),
 				request.getValue(), request.getEnabled());
-		return ResponseEntity.ok(new DestinationResponse(updated));
+		return ResponseEntity.ok(new NotificationDestinationResponse(updated));
 	}
 
 	@Operation(summary = "Remover destino")
@@ -118,7 +119,7 @@ public class WhatsappController {
 
 	@Operation(summary = "Enviar mensagem de teste")
 	@PostMapping("/test")
-	public ResponseEntity<Map<String, Object>> test(@RequestBody(required = false) TestMessageRequest request) {
+	public ResponseEntity<Map<String, Object>> test(@RequestBody(required = false) WhatsappTestRequest request) {
 		String message = request != null && request.getMessage() != null && !request.getMessage().isBlank()
 				? request.getMessage()
 				: "Teste de notificacao do sistema de leiloes. Se voce recebeu isto, o canal esta funcionando.";
@@ -140,130 +141,5 @@ public class WhatsappController {
 		Object event = payload == null ? null : payload.get("event");
 		LOG.info("Webhook WhatsApp recebido: event={}", event);
 		return ResponseEntity.ok().build();
-	}
-
-	// ----------------------------- DTOs -----------------------------
-
-	public static class SettingsRequest {
-		private Boolean enabled;
-
-		public Boolean getEnabled() {
-			return enabled;
-		}
-
-		public void setEnabled(Boolean enabled) {
-			this.enabled = enabled;
-		}
-	}
-
-	public static class DestinationRequest {
-		private String label;
-		private DestinationType type;
-		private String value;
-		private Boolean enabled;
-
-		public String getLabel() {
-			return label;
-		}
-
-		public void setLabel(String label) {
-			this.label = label;
-		}
-
-		public DestinationType getType() {
-			return type;
-		}
-
-		public void setType(DestinationType type) {
-			this.type = type;
-		}
-
-		public String getValue() {
-			return value;
-		}
-
-		public void setValue(String value) {
-			this.value = value;
-		}
-
-		public Boolean getEnabled() {
-			return enabled;
-		}
-
-		public void setEnabled(Boolean enabled) {
-			this.enabled = enabled;
-		}
-	}
-
-	public static class DestinationResponse {
-		private final Long id;
-		private final String label;
-		private final DestinationType type;
-		private final String typeLabel;
-		private final String value;
-		private final boolean enabled;
-
-		public DestinationResponse(NotificationDestination destination) {
-			this.id = destination.getId();
-			this.label = destination.getLabel();
-			this.type = destination.getType();
-			this.typeLabel = destination.getType() == null ? null : destination.getType().getDescription();
-			this.value = destination.getValue();
-			this.enabled = Boolean.TRUE.equals(destination.getEnabled());
-		}
-
-		public Long getId() {
-			return id;
-		}
-
-		public String getLabel() {
-			return label;
-		}
-
-		public DestinationType getType() {
-			return type;
-		}
-
-		public String getTypeLabel() {
-			return typeLabel;
-		}
-
-		public String getValue() {
-			return value;
-		}
-
-		public boolean isEnabled() {
-			return enabled;
-		}
-	}
-
-	public static class TestMessageRequest {
-		private String to;
-		private Long destinationId;
-		private String message;
-
-		public String getTo() {
-			return to;
-		}
-
-		public void setTo(String to) {
-			this.to = to;
-		}
-
-		public Long getDestinationId() {
-			return destinationId;
-		}
-
-		public void setDestinationId(Long destinationId) {
-			this.destinationId = destinationId;
-		}
-
-		public String getMessage() {
-			return message;
-		}
-
-		public void setMessage(String message) {
-			this.message = message;
-		}
 	}
 }
