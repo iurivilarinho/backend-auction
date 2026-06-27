@@ -1,6 +1,5 @@
 package com.br.auction.notification;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -46,40 +45,39 @@ public class WhatsappController {
 
 	@Operation(summary = "Status do canal e da conexao")
 	@GetMapping("/status")
-	public ResponseEntity<Map<String, Object>> status() {
-		Map<String, Object> out = new HashMap<>();
-		out.put("enabled", notifier.isEnabled());
-		out.put("hasApiKey", notifier.hasApiKey());
-		out.put("configured", notifier.isConfigured());
-		out.put("instance", notifier.getInstance());
-		out.put("connectionState", notifier.connectionState());
-		return ResponseEntity.ok(out);
+	public ResponseEntity<WhatsappStatusResponse> status() {
+		return ResponseEntity.ok(currentStatus());
 	}
 
 	@Operation(summary = "Ligar/desligar o canal")
 	@PutMapping("/settings")
-	public ResponseEntity<Map<String, Object>> updateSettings(@RequestBody WhatsappSettingsRequest request) {
-		boolean enabled = request != null && Boolean.TRUE.equals(request.getEnabled());
-		service.updateEnabled(enabled);
-		return ResponseEntity.ok(Map.of("enabled", enabled));
+	public ResponseEntity<WhatsappStatusResponse> updateSettings(@RequestBody WhatsappSettingsRequest request) {
+		service.updateEnabled(request != null && Boolean.TRUE.equals(request.getEnabled()));
+		return ResponseEntity.ok(currentStatus());
 	}
 
 	@Operation(summary = "QR / pareamento da instancia")
 	@GetMapping("/qr")
-	public ResponseEntity<Map<String, Object>> qr() {
+	public ResponseEntity<WhatsappQrResponse> qr() {
 		return ResponseEntity.ok(notifier.connect());
 	}
 
 	@Operation(summary = "Desconectar o numero (logout)")
 	@PostMapping("/logout")
-	public ResponseEntity<Map<String, Object>> logout() {
-		return ResponseEntity.ok(Map.of("success", notifier.logout()));
+	public ResponseEntity<WhatsappStatusResponse> logout() {
+		notifier.logout();
+		return ResponseEntity.ok(currentStatus());
 	}
 
 	@Operation(summary = "Listar grupos do numero logado")
 	@GetMapping("/groups")
-	public ResponseEntity<List<Map<String, Object>>> groups() {
+	public ResponseEntity<List<WhatsappGroupResponse>> groups() {
 		return ResponseEntity.ok(notifier.listGroups());
+	}
+
+	private WhatsappStatusResponse currentStatus() {
+		return new WhatsappStatusResponse(notifier.isEnabled(), notifier.hasApiKey(), notifier.isConfigured(),
+				notifier.getInstance(), notifier.connectionState());
 	}
 
 	// ----------------------------- Destinos -----------------------------
@@ -119,7 +117,7 @@ public class WhatsappController {
 
 	@Operation(summary = "Enviar mensagem de teste")
 	@PostMapping("/test")
-	public ResponseEntity<Map<String, Object>> test(@RequestBody(required = false) WhatsappTestRequest request) {
+	public ResponseEntity<WhatsappSendResponse> test(@RequestBody(required = false) WhatsappTestRequest request) {
 		String message = request != null && request.getMessage() != null && !request.getMessage().isBlank()
 				? request.getMessage()
 				: "Teste de notificacao do sistema de leiloes. Se voce recebeu isto, o canal esta funcionando.";
@@ -132,7 +130,7 @@ public class WhatsappController {
 		}
 		SendResult result = target != null && !target.isBlank() ? notifier.sendTest(target, message)
 				: notifier.sendTest(message);
-		return ResponseEntity.ok(Map.of("status", result.getStatus().name(), "detail", result.getDetail()));
+		return ResponseEntity.ok(new WhatsappSendResponse(result));
 	}
 
 	@Operation(summary = "Webhook de eventos da Evolution API")

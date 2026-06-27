@@ -2,7 +2,6 @@ package com.br.auction.notification;
 
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -199,9 +198,9 @@ public class WhatsappNotifier {
 	 * Garante que a instancia exista e devolve o QR para parear (base64 + pairingCode) e o estado.
 	 * Quando ja esta logada, a Evolution responde sem QR e o estado vem "open".
 	 */
-	public Map<String, Object> connect() {
+	public WhatsappQrResponse connect() {
 		if (apiKey.isBlank()) {
-			return Map.of("error", "API key da Evolution nao configurada.");
+			return WhatsappQrResponse.error("API key da Evolution nao configurada.");
 		}
 		ensureInstance();
 		try {
@@ -211,17 +210,13 @@ public class WhatsappNotifier {
 					.retrieve()
 					.body(Map.class);
 			if (body == null) {
-				return Map.of();
+				return new WhatsappQrResponse(null, null, null, connectionState(), null);
 			}
-			HashMap<String, Object> out = new HashMap<>();
-			out.put("base64", body.get("base64"));
-			out.put("pairingCode", body.get("pairingCode"));
-			out.put("code", body.get("code"));
-			out.put("state", connectionState());
-			return out;
+			return new WhatsappQrResponse(asString(body.get("base64")), asString(body.get("pairingCode")),
+					asString(body.get("code")), connectionState(), null);
 		} catch (RuntimeException ex) {
 			LOG.warn("Falha ao obter QR da instancia {}: {}", instance, ex.getMessage());
-			return Map.of("error", ex.getMessage());
+			return WhatsappQrResponse.error(ex.getMessage());
 		}
 	}
 
@@ -243,8 +238,8 @@ public class WhatsappNotifier {
 		}
 	}
 
-	/** Lista os grupos em que o numero logado participa: [{ id (JID), subject }]. */
-	public List<Map<String, Object>> listGroups() {
+	/** Lista os grupos em que o numero logado participa. */
+	public List<WhatsappGroupResponse> listGroups() {
 		if (apiKey.isBlank()) {
 			return List.of();
 		}
@@ -254,22 +249,23 @@ public class WhatsappNotifier {
 					.header("apikey", apiKey)
 					.retrieve()
 					.body(Object.class);
-			List<Map<String, Object>> groups = new ArrayList<>();
+			List<WhatsappGroupResponse> groups = new ArrayList<>();
 			if (body instanceof List<?> list) {
 				for (Object item : list) {
 					if (item instanceof Map<?, ?> map) {
-						Object subject = map.get("subject");
-						groups.add(Map.of(
-								"id", String.valueOf(map.get("id")),
-								"subject", subject == null ? "" : subject.toString()));
+						groups.add(new WhatsappGroupResponse(asString(map.get("id")), asString(map.get("subject"))));
 					}
 				}
 			}
 			return groups;
 		} catch (RuntimeException ex) {
 			LOG.warn("Falha ao listar grupos da instancia {}: {}", instance, ex.getMessage());
-			return java.util.List.of();
+			return List.of();
 		}
+	}
+
+	private static String asString(Object value) {
+		return value == null ? null : value.toString();
 	}
 
 	/** Cria a instancia se ainda nao existir (idempotente). */
