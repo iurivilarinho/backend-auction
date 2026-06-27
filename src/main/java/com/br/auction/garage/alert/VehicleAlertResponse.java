@@ -22,6 +22,7 @@ public class VehicleAlertResponse {
 	private final String lotType;
 	private final BigDecimal maxBid;
 	private final Double radiusKm;
+	private final Integer minYear;
 	private final BigDecimal thresholdValue;
 	private final Integer fipePercent;
 	private final Integer leadTimeMinutes;
@@ -42,6 +43,7 @@ public class VehicleAlertResponse {
 		this.lotType = alert.getLotType();
 		this.maxBid = alert.getMaxBid();
 		this.radiusKm = alert.getRadiusKm();
+		this.minYear = alert.getMinYear();
 		this.thresholdValue = alert.getThresholdValue();
 		this.fipePercent = alert.getFipePercent();
 		this.leadTimeMinutes = alert.getLeadTimeMinutes();
@@ -93,6 +95,10 @@ public class VehicleAlertResponse {
 
 	public Double getRadiusKm() {
 		return radiusKm;
+	}
+
+	public Integer getMinYear() {
+		return minYear;
 	}
 
 	public BigDecimal getThresholdValue() {

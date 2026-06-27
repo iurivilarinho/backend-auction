@@ -25,8 +25,15 @@ final class AlertSpecifications {
 		return (root, query, cb) -> {
 			List<Predicate> predicates = new ArrayList<>();
 			if (notBlank(alert.getKeyword())) {
-				predicates.add(cb.like(cb.lower(root.get("vehicleDescription")),
-						"%" + alert.getKeyword().toLowerCase() + "%"));
+				// Busca por trecho ignorando espacos: "xr 200" casa com "XR200" e "XR 200".
+				jakarta.persistence.criteria.Expression<String> descNoSpace = cb.function("replace", String.class,
+						cb.lower(root.get("vehicleDescription")), cb.literal(" "), cb.literal(""));
+				String keyword = alert.getKeyword().toLowerCase().replace(" ", "");
+				predicates.add(cb.like(descNoSpace, "%" + keyword + "%"));
+			}
+			if (alert.getMinYear() != null) {
+				// vehicleYear e texto ("2012" ou "2012/2013"); comparacao lexical funciona p/ anos de 4 digitos.
+				predicates.add(cb.greaterThanOrEqualTo(root.get("vehicleYear"), alert.getMinYear().toString()));
 			}
 			if (notBlank(alert.getBrand())) {
 				predicates.add(cb.like(cb.lower(root.get("brand")), "%" + alert.getBrand().toLowerCase() + "%"));

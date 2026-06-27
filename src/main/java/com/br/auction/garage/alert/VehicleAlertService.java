@@ -80,6 +80,7 @@ public class VehicleAlertService {
 		alert.setLotType(blankToNull(request.getLotType()));
 		alert.setMaxBid(request.getMaxBid());
 		alert.setRadiusKm(request.getRadiusKm());
+		alert.setMinYear(request.getMinYear());
 		alert.setThresholdValue(request.getThresholdValue());
 		alert.setFipePercent(request.getFipePercent());
 		alert.setLeadTimeMinutes(request.getLeadTimeMinutes());

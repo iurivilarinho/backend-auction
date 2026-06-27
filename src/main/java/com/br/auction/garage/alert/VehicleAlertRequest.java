@@ -38,6 +38,9 @@ public class VehicleAlertRequest {
 	@Schema(description = "Raio maximo em km a partir do ponto de origem configurado")
 	private Double radiusKm;
 
+	@Schema(description = "Ano minimo do veiculo (ex.: 2012)")
+	private Integer minYear;
+
 	@Schema(description = "Valor de gatilho: teto (PRICE_ABOVE) ou alvo (SOLD_BELOW)")
 	private BigDecimal thresholdValue;
 
@@ -123,6 +126,14 @@ public class VehicleAlertRequest {
 
 	public void setRadiusKm(Double radiusKm) {
 		this.radiusKm = radiusKm;
+	}
+
+	public Integer getMinYear() {
+		return minYear;
+	}
+
+	public void setMinYear(Integer minYear) {
+		this.minYear = minYear;
 	}
 
 	public BigDecimal getThresholdValue() {

@@ -64,6 +64,10 @@ public class VehicleAlert {
 	@Schema(description = "Raio maximo em km a partir do ponto de origem configurado (opcional)")
 	private Double radiusKm;
 
+	@Column
+	@Schema(description = "Ano minimo do veiculo (ex.: 2012 = de 2012 em diante)")
+	private Integer minYear;
+
 	// ---------------- Parametros especificos por tipo ----------------
 
 	@Column(precision = 15, scale = 2)
@@ -174,6 +178,14 @@ public class VehicleAlert {
 
 	public void setRadiusKm(Double radiusKm) {
 		this.radiusKm = radiusKm;
+	}
+
+	public Integer getMinYear() {
+		return minYear;
+	}
+
+	public void setMinYear(Integer minYear) {
+		this.minYear = minYear;
 	}
 
 	public BigDecimal getThresholdValue() {
