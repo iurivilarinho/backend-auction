@@ -1,10 +1,13 @@
 package com.br.auction.garage.alert;
 
-import org.springframework.data.jpa.domain.Specification;
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.br.auction.garage.enums.AlertType;
 import com.br.auction.garage.models.VehicleAlert;
+import com.br.auction.garage.repository.AlertNotificationRepository;
 import com.br.auction.garage.repository.VehicleAlertRepository;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
@@ -16,13 +19,16 @@ public class VehicleAlertService {
 
 	private final VehicleAlertRepository repository;
 	private final AuctionItemRepository auctionItemRepository;
+	private final AlertNotificationRepository notificationRepository;
 
-	public VehicleAlertService(VehicleAlertRepository repository, AuctionItemRepository auctionItemRepository) {
+	public VehicleAlertService(VehicleAlertRepository repository, AuctionItemRepository auctionItemRepository,
+			AlertNotificationRepository notificationRepository) {
 		this.repository = repository;
 		this.auctionItemRepository = auctionItemRepository;
+		this.notificationRepository = notificationRepository;
 	}
 
-	public java.util.List<VehicleAlert> findAll() {
+	public List<VehicleAlert> findAll() {
 		return repository.findAllByOrderByCreatedAtDesc();
 	}
 
@@ -47,44 +53,38 @@ public class VehicleAlertService {
 
 	@Transactional
 	public void delete(Long id) {
-		repository.delete(findById(id));
+		VehicleAlert alert = findById(id);
+		notificationRepository.deleteByAlertId(alert.getId());
+		repository.delete(alert);
 	}
 
 	/**
-	 * Conta quantos veiculos atualmente atendem ao criterio do alerta.
+	 * Conta quantos veiculos atualmente atendem ao criterio de selecao do alerta (ignora o raio,
+	 * que depende de geocodificacao). Da uma ideia do alcance do alerta na tela.
 	 */
 	public int countMatches(VehicleAlert alert) {
-		return (int) auctionItemRepository.count(buildSpecification(alert));
+		return (int) auctionItemRepository.count(AlertSpecifications.forAlert(alert));
+	}
+
+	List<AuctionItem> findCandidates(VehicleAlert alert) {
+		return auctionItemRepository.findAll(AlertSpecifications.forAlert(alert));
 	}
 
 	private void apply(VehicleAlert alert, VehicleAlertRequest request) {
 		alert.setName(request.getName());
+		alert.setType(request.getType() == null ? AlertType.NEW_MATCH : request.getType());
 		alert.setKeyword(blankToNull(request.getKeyword()));
+		alert.setBrand(blankToNull(request.getBrand()));
+		alert.setModel(blankToNull(request.getModel()));
 		alert.setCity(blankToNull(request.getCity()));
 		alert.setLotType(blankToNull(request.getLotType()));
 		alert.setMaxBid(request.getMaxBid());
+		alert.setRadiusKm(request.getRadiusKm());
+		alert.setThresholdValue(request.getThresholdValue());
+		alert.setFipePercent(request.getFipePercent());
+		alert.setLeadTimeMinutes(request.getLeadTimeMinutes());
+		alert.setRecipientPhone(blankToNull(request.getRecipientPhone()));
 		alert.setActive(request.getActive() == null ? Boolean.TRUE : request.getActive());
-	}
-
-	private Specification<AuctionItem> buildSpecification(VehicleAlert alert) {
-		return (root, query, cb) -> {
-			java.util.List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
-			if (alert.getKeyword() != null) {
-				predicates.add(cb.like(cb.lower(root.get("vehicleDescription")),
-						"%" + alert.getKeyword().toLowerCase() + "%"));
-			}
-			if (alert.getLotType() != null) {
-				predicates.add(cb.equal(cb.lower(root.get("lotType")), alert.getLotType().toLowerCase()));
-			}
-			if (alert.getMaxBid() != null) {
-				predicates.add(cb.lessThanOrEqualTo(root.get("currentBidValue"), alert.getMaxBid()));
-			}
-			if (alert.getCity() != null) {
-				predicates.add(cb.like(cb.lower(root.join("auction").get("city")),
-						"%" + alert.getCity().toLowerCase() + "%"));
-			}
-			return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
-		};
 	}
 
 	private String blankToNull(String value) {

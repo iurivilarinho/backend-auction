@@ -9,4 +9,6 @@ import com.br.auction.garage.models.VehicleAlert;
 public interface VehicleAlertRepository extends JpaRepository<VehicleAlert, Long> {
 
 	List<VehicleAlert> findAllByOrderByCreatedAtDesc();
+
+	List<VehicleAlert> findByActiveTrue();
 }

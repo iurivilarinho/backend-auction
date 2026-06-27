@@ -3,6 +3,7 @@ package com.br.auction.garage.alert;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+import com.br.auction.garage.enums.AlertType;
 import com.br.auction.garage.models.VehicleAlert;
 
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -12,10 +13,19 @@ public class VehicleAlertResponse {
 
 	private final Long id;
 	private final String name;
+	private final AlertType type;
+	private final String typeLabel;
 	private final String keyword;
+	private final String brand;
+	private final String model;
 	private final String city;
 	private final String lotType;
 	private final BigDecimal maxBid;
+	private final Double radiusKm;
+	private final BigDecimal thresholdValue;
+	private final Integer fipePercent;
+	private final Integer leadTimeMinutes;
+	private final String recipientPhone;
 	private final Boolean active;
 	private final int matches;
 	private final LocalDateTime createdAt;
@@ -23,10 +33,19 @@ public class VehicleAlertResponse {
 	public VehicleAlertResponse(VehicleAlert alert, int matches) {
 		this.id = alert.getId();
 		this.name = alert.getName();
+		this.type = alert.getType();
+		this.typeLabel = alert.getType() == null ? null : alert.getType().getDescription();
 		this.keyword = alert.getKeyword();
+		this.brand = alert.getBrand();
+		this.model = alert.getModel();
 		this.city = alert.getCity();
 		this.lotType = alert.getLotType();
 		this.maxBid = alert.getMaxBid();
+		this.radiusKm = alert.getRadiusKm();
+		this.thresholdValue = alert.getThresholdValue();
+		this.fipePercent = alert.getFipePercent();
+		this.leadTimeMinutes = alert.getLeadTimeMinutes();
+		this.recipientPhone = alert.getRecipientPhone();
 		this.active = alert.getActive();
 		this.matches = matches;
 		this.createdAt = alert.getCreatedAt();
@@ -40,8 +59,24 @@ public class VehicleAlertResponse {
 		return name;
 	}
 
+	public AlertType getType() {
+		return type;
+	}
+
+	public String getTypeLabel() {
+		return typeLabel;
+	}
+
 	public String getKeyword() {
 		return keyword;
+	}
+
+	public String getBrand() {
+		return brand;
+	}
+
+	public String getModel() {
+		return model;
 	}
 
 	public String getCity() {
@@ -54,6 +89,26 @@ public class VehicleAlertResponse {
 
 	public BigDecimal getMaxBid() {
 		return maxBid;
+	}
+
+	public Double getRadiusKm() {
+		return radiusKm;
+	}
+
+	public BigDecimal getThresholdValue() {
+		return thresholdValue;
+	}
+
+	public Integer getFipePercent() {
+		return fipePercent;
+	}
+
+	public Integer getLeadTimeMinutes() {
+		return leadTimeMinutes;
+	}
+
+	public String getRecipientPhone() {
+		return recipientPhone;
 	}
 
 	public Boolean getActive() {
