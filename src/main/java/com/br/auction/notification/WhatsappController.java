@@ -129,8 +129,8 @@ public class WhatsappController {
 					.map(NotificationDestination::getValue)
 					.findFirst().orElse(null);
 		}
-		SendResult result = target != null && !target.isBlank() ? notifier.send(target, message)
-				: notifier.send(message);
+		SendResult result = target != null && !target.isBlank() ? notifier.sendTest(target, message)
+				: notifier.sendTest(message);
 		return ResponseEntity.ok(Map.of("status", result.getStatus().name(), "detail", result.getDetail()));
 	}
 

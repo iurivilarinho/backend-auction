@@ -11,6 +11,7 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Canal de envio de mensagens via WhatsApp usando a Evolution API (gateway nao oficial, self-host).
@@ -85,26 +86,42 @@ public class WhatsappNotifier {
 
 	// ---------------------------------- Envio ----------------------------------
 
-	/** Envia para o destinatario global configurado. */
+	/** Envia para o destinatario global configurado (respeita o liga/desliga do canal). */
 	public SendResult send(String text) {
 		return send(getDefaultRecipient(), text);
 	}
 
 	/**
-	 * Envia uma mensagem de texto. Numero no formato internacional sem o sinal de +
-	 * (ex.: 5534999998888). Nunca lanca: devolve um {@link SendResult} para que a avaliacao
-	 * de alertas siga mesmo quando o canal esta indisponivel.
+	 * Envia uma mensagem de texto (uso dos alertas automaticos). Respeita o liga/desliga do canal.
+	 * Numero no formato internacional sem o + (ex.: 5534999998888) ou JID de grupo (...@g.us).
+	 * Nunca lanca: devolve um {@link SendResult} para que a avaliacao em lote siga.
 	 */
 	public SendResult send(String number, String text) {
-		String to = normalizeNumber(number);
-		if (!isEnabled()) {
-			return SendResult.skipped("Canal WhatsApp desativado.");
+		return dispatch(number, text, true, false);
+	}
+
+	/** Envio de teste manual: ignora o liga/desliga, mas confirma que o numero esta conectado. */
+	public SendResult sendTest(String text) {
+		return sendTest(getDefaultRecipient(), text);
+	}
+
+	public SendResult sendTest(String number, String text) {
+		return dispatch(number, text, false, true);
+	}
+
+	private SendResult dispatch(String number, String text, boolean requireEnabled, boolean checkConnection) {
+		String to = normalizeRecipient(number);
+		if (requireEnabled && !isEnabled()) {
+			return SendResult.skipped("Canal desativado. Ative em Parametros > WhatsApp.");
 		}
 		if (apiKey.isBlank()) {
-			return SendResult.skipped("API key da Evolution nao configurada (whatsapp.evolution.api-key).");
+			return SendResult.skipped("Evolution sem API key — verifique a configuracao do servidor.");
 		}
 		if (to.isBlank()) {
-			return SendResult.skipped("Destinatario nao informado e numero global vazio.");
+			return SendResult.skipped("Informe um destino (nenhum numero/grupo definido).");
+		}
+		if (checkConnection && !"open".equals(connectionState())) {
+			return SendResult.skipped("WhatsApp nao esta conectado. Escaneie o QR em Parametros > WhatsApp.");
 		}
 		try {
 			restClient.post()
@@ -116,10 +133,38 @@ public class WhatsappNotifier {
 					.toBodilessEntity();
 			LOG.info("WhatsApp enviado para {} ({} chars).", to, text.length());
 			return SendResult.ok(to);
+		} catch (RestClientResponseException ex) {
+			String friendly = translateError(ex, to);
+			LOG.warn("WhatsApp recusou envio para {}: {}", to, ex.getMessage());
+			return SendResult.failed(friendly);
 		} catch (RuntimeException ex) {
 			LOG.warn("Falha ao enviar WhatsApp para {}: {}", to, ex.getMessage());
-			return SendResult.failed(ex.getMessage());
+			return SendResult.failed("Nao foi possivel falar com o WhatsApp: " + ex.getMessage());
 		}
+	}
+
+	/** Traduz os erros mais comuns da Evolution para algo acionavel pelo usuario. */
+	private static String translateError(RestClientResponseException ex, String to) {
+		String body = ex.getResponseBodyAsString();
+		if (body != null && body.contains("\"exists\":false")) {
+			return "O numero " + to + " nao tem WhatsApp. Confira o DDI/DDD e o 9o digito do celular.";
+		}
+		if (body != null && (body.contains("not found") || body.contains("Connection Closed")
+				|| body.contains("connecting"))) {
+			return "WhatsApp nao esta conectado. Escaneie o QR em Parametros > WhatsApp.";
+		}
+		return "WhatsApp recusou o envio (HTTP " + ex.getStatusCode().value() + ").";
+	}
+
+	/** Mantem o JID de grupo intacto; nos demais casos reduz a digitos (E.164 sem +). */
+	private static String normalizeRecipient(String number) {
+		if (number == null) {
+			return "";
+		}
+		if (number.contains("@")) {
+			return number.trim();
+		}
+		return normalizeNumber(number);
 	}
 
 	// ---------------------------------- Consulta a Evolution (status/QR) ----------------------------------
