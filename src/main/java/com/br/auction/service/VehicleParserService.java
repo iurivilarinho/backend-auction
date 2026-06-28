@@ -21,8 +21,14 @@ public class VehicleParserService {
 
 			String[] parts = normalized.split(" ");
 
-			String year = parts[parts.length - 1];
-			info.setYear(year);
+			// So considera o ultimo token como ano quando ele REALMENTE parece um ano (4 digitos, ou
+			// "AAAA/AA"/"AAAA/AAAA"). Evita capturar lixo da descricao como ano (ex.: "CVT", "4P", "(4P)").
+			int modelEnd = parts.length;
+			String last = parts[parts.length - 1];
+			if (last.matches("\\d{4}(/\\d{2,4})?")) {
+				info.setYear(last);
+				modelEnd = parts.length - 1;
+			}
 
 			String brandModel = parts[0];
 
@@ -39,7 +45,7 @@ public class VehicleParserService {
 
 			StringBuilder modelBuilder = new StringBuilder(firstModelPart);
 
-			for (int i = 1; i < parts.length - 1; i++) {
+			for (int i = 1; i < modelEnd; i++) {
 				modelBuilder.append(" ").append(parts[i]);
 			}
 

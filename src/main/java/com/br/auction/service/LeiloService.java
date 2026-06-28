@@ -122,12 +122,46 @@ public class LeiloService {
 		m.put("lotType", text(lot, "tipo"));
 		m.put("vehicleDescription", firstNonBlank(text(lot, "nome"),
 				(veiculo.path("infocarMarca").asText("") + " " + veiculo.path("infocarModelo").asText("")).trim()));
+		// Ano vem estruturado da fonte (a descricao nem sempre traz ano); prioriza o ano-modelo.
+		m.put("vehicleYear", vehicleYear(veiculo));
+		// Condicao normalizada para o padrao do sistema (CONSERVADO/SUCATA). Os veiculos da Leilo sao
+		// retomadas de banco/seguradora (carros em uso) = CONSERVADO; so marca SUCATA quando a descricao
+		// indica sinistro/perda total/monta.
+		m.put("condition", classifyCondition(lot));
 		m.put("currentBidValue", lance != null ? lance : minimo);
 		m.put("minimumBidValue", minimo);
 		m.put("closingDate", brDate(text(lot, "dataFim")));
 		m.put("lotStatus", text(lot, "situacao"));
 		m.put("imageUrls", imageUrls(lot.path("fotosUrls")));
 		return m;
+	}
+
+	/** Ano do veiculo a partir dos campos estruturados (ano-modelo; cai para ano-fabricacao). */
+	private static String vehicleYear(JsonNode veiculo) {
+		for (String field : new String[] { "anoModelo", "anoFabricacao" }) {
+			JsonNode v = veiculo.get(field);
+			if (v != null && !v.isNull()) {
+				String year = v.asText().trim();
+				if (year.matches("\\d{4}")) {
+					return year;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** Palavras que indicam veiculo de sucata/sinistro (do contrario, conservado). */
+	private static final List<String> SUCATA_KEYWORDS = List.of("sucata", "sinistro", "sinistrado", "perda total",
+			"monta", "remont", "inserviv", "recuperav", "sem motor", "incendiad");
+
+	/**
+	 * Classifica o lote no padrao do sistema: SUCATA quando a descricao indica sinistro/sucata; caso
+	 * contrario CONSERVADO (os veiculos da Leilo sao retomadas de banco/seguradora, em uso).
+	 */
+	private static String classifyCondition(JsonNode lot) {
+		String text = (lot.path("nome").asText("") + " " + lot.path("veiculo").path("infocarModelo").asText(""))
+				.toLowerCase(Locale.ROOT);
+		return SUCATA_KEYWORDS.stream().anyMatch(text::contains) ? "SUCATA" : "CONSERVADO";
 	}
 
 	private boolean isVehicle(JsonNode lot) {

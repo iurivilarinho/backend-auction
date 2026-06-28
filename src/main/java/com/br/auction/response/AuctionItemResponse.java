@@ -31,6 +31,9 @@ public class AuctionItemResponse {
 	@Schema(description = "Descricao do veiculo")
 	private String vehicleDescription;
 
+	@Schema(description = "Condicao do veiculo: CONSERVADO ou SUCATA")
+	private String condition;
+
 	@Schema(description = "Marca extraida da descricao")
 	private String brand;
 
@@ -71,6 +74,7 @@ public class AuctionItemResponse {
 		this.lotType = item.getLotType();
 		this.normalizedLotType = LotType.fromSource(item.getLotType());
 		this.vehicleDescription = item.getVehicleDescription();
+		this.condition = item.getCondition();
 		this.brand = item.getBrand();
 		this.model = item.getModel();
 		this.vehicleYear = item.getVehicleYear();
@@ -107,6 +111,10 @@ public class AuctionItemResponse {
 
 	public String getVehicleDescription() {
 		return vehicleDescription;
+	}
+
+	public String getCondition() {
+		return condition;
 	}
 
 	public String getBrand() {

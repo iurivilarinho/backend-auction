@@ -133,6 +133,17 @@ public class InternalDestinationSender {
 			item.setModel(vehicleInfo.getModel());
 			item.setVehicleYear(vehicleInfo.getYear());
 		}
+		// Campos estruturados do provedor sobrescrevem o parse heuristico da descricao quando presentes
+		// (ex.: a Leilo entrega o ano em campo proprio, ja que a descricao nem sempre traz ano).
+		if (payload.containsKey("vehicleYear")) {
+			String year = text(payload.get("vehicleYear"));
+			if (year != null && !year.isBlank()) {
+				item.setVehicleYear(year);
+			}
+		}
+		if (payload.containsKey("condition")) {
+			item.setCondition(text(payload.get("condition")));
+		}
 		if (payload.containsKey("currentBidValue")) {
 			item.setCurrentBidValue(parseDecimal(payload.get("currentBidValue")));
 		}

@@ -332,6 +332,31 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		}
 	}
 
+	/**
+	 * Garante que integracoes de lote ja existentes ganhem os mapeamentos de enriquecimento adicionados
+	 * depois (condicao CONSERVADO/SUCATA e ano estruturado), sem recriar a integracao. Idempotente.
+	 */
+	private void reconcileLotEnrichmentMappings(Integration integration) {
+		boolean changed = addMappingIfMissing(integration, "condition", "condition", 10);
+		changed |= addMappingIfMissing(integration, "vehicleYear", "vehicleYear", 11);
+		if (changed) {
+			integrationRepository.save(integration);
+			LOG.info("Integracao {} reconciliada: mapeamentos condition/vehicleYear garantidos.",
+					integration.getCode());
+		}
+	}
+
+	/** Adiciona o mapeamento se ainda nao houver um para o mesmo targetField. Retorna true se mudou. */
+	private boolean addMappingIfMissing(Integration integration, String sourceField, String targetField, int ordem) {
+		boolean exists = integration.getFieldMappings().stream()
+				.anyMatch(mapping -> targetField.equals(mapping.getTargetField()));
+		if (exists) {
+			return false;
+		}
+		addMapping(integration, sourceField, targetField, null, false, ordem);
+		return true;
+	}
+
 	private void addMapping(Integration integration, String sourceField, String targetField, String transform,
 			boolean uniqueKey, int ordem) {
 		FieldMapping mapping = new FieldMapping();
@@ -360,8 +385,10 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 				.ifPresentOrElse(this::reconcileSchedule,
 						() -> integrationRepository.save(buildLeiloAuctionIntegration(leilo, leiloSource, auctionModel)));
 		integrationRepository.findByCode("LEILO_GO_LOTS_IN")
-				.ifPresentOrElse(this::reconcileSchedule,
-						() -> integrationRepository.save(buildLeiloLotIntegration(leilo, leiloSource, lotModel)));
+				.ifPresentOrElse(integration -> {
+					reconcileSchedule(integration);
+					reconcileLotEnrichmentMappings(integration);
+				}, () -> integrationRepository.save(buildLeiloLotIntegration(leilo, leiloSource, lotModel)));
 	}
 
 	private IntegrationSource buildLeiloSource(AuctionProvider provider) {
@@ -418,6 +445,8 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addField(model, "lotNumber", "Numero do lote", FieldDataType.STRING, false);
 		addField(model, "lotType", "Tipo do lote", FieldDataType.STRING, false);
 		addField(model, "vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, false);
+		addField(model, "vehicleYear", "Ano do veiculo", FieldDataType.STRING, false);
+		addField(model, "condition", "Condicao (CONSERVADO/SUCATA)", FieldDataType.STRING, false);
 		addField(model, "currentBidValue", "Lance atual", FieldDataType.STRING, false);
 		addField(model, "minimumBidValue", "Lance inicial", FieldDataType.STRING, false);
 		addField(model, "closingDate", "Encerramento do lote", FieldDataType.STRING, false);
@@ -465,7 +494,10 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 				.ifPresentOrElse(this::reconcileSchedule, () -> integrationRepository.save(
 						buildPlatformAuctionIntegration(mc, src, auctionModel, "MCLEILAO_GO_AUCTIONS_IN")));
 		integrationRepository.findByCode("MCLEILAO_GO_LOTS_IN")
-				.ifPresentOrElse(this::reconcileSchedule, () -> integrationRepository.save(
+				.ifPresentOrElse(integration -> {
+					reconcileSchedule(integration);
+					reconcileLotEnrichmentMappings(integration);
+				}, () -> integrationRepository.save(
 						buildPlatformLotIntegration(mc, src, lotModel, "MCLEILAO_GO_LOTS_IN")));
 	}
 
@@ -581,6 +613,8 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "closingDate", "lotClosingDate", null, false, 7);
 		addMapping(integration, "lotStatus", "lotStatus", null, false, 8);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 9);
+		addMapping(integration, "condition", "condition", null, false, 10);
+		addMapping(integration, "vehicleYear", "vehicleYear", null, false, 11);
 		return integration;
 	}
 
@@ -607,6 +641,8 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "closingDate", "lotClosingDate", null, false, 7);
 		addMapping(integration, "lotStatus", "lotStatus", null, false, 8);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 9);
+		addMapping(integration, "condition", "condition", null, false, 10);
+		addMapping(integration, "vehicleYear", "vehicleYear", null, false, 11);
 		return integration;
 	}
 }
