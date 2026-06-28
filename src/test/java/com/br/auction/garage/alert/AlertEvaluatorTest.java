@@ -81,6 +81,21 @@ class AlertEvaluatorTest {
 	}
 
 	@Test
+	void openedUsaStatusDoLoteQuandoDisponivel() {
+		VehicleAlert alert = baseAlert();
+		alert.setNotifyOnStart(true);
+		// Leilao ainda "Publicado", mas o lote ja entrou em andamento (status 2) -> deve disparar.
+		AuctionItem loteEmAndamento = item("Publicado", null, null, null);
+		loteEmAndamento.setLotStatus("2");
+		// Lote ainda aguardando (status 1) -> nao dispara, mesmo no mesmo leilao.
+		AuctionItem loteAguardando = item("Publicado", null, null, null);
+		loteAguardando.setLotStatus("1");
+		when(alertService.findCandidates(alert)).thenReturn(List.of(loteEmAndamento, loteAguardando));
+
+		assertThat(evaluator.findMatches(alert, 10)).containsExactly(loteEmAndamento);
+	}
+
+	@Test
 	void priceAboveDisparaQuandoLancePassaDoTeto() {
 		VehicleAlert alert = baseAlert();
 		alert.setNotifyPriceAbove(true);

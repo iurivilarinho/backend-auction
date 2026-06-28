@@ -215,8 +215,7 @@ public class AlertEvaluator {
 		case NEW_MATCH:
 			return true;
 		case OPENED:
-			return item.getAuction() != null
-					&& AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.EM_ANDAMENTO;
+			return lotAcceptingBids(item);
 		case PRICE_ABOVE:
 			return item.getCurrentBidValue() != null && alert.getThresholdValue() != null
 					&& item.getCurrentBidValue().compareTo(alert.getThresholdValue()) > 0;
@@ -231,6 +230,21 @@ public class AlertEvaluator {
 		default:
 			return false;
 		}
+	}
+
+	/**
+	 * Se o LOTE esta aceitando lances agora. Usa o status por lote quando ja coletado (provedor:
+	 * 1=publicado/aguardando, 3/4=encerrado; qualquer outro, ex. 2, = em andamento); se ainda nao ha
+	 * status do lote, cai no status do leilao. (Codigo "2" inferido — nenhum leilao em andamento para
+	 * observar no momento; o fallback garante comportamento correto enquanto isso.)
+	 */
+	private boolean lotAcceptingBids(AuctionItem item) {
+		String status = item.getLotStatus();
+		if (status != null && !status.isBlank()) {
+			return !status.equals("1") && !status.equals("3") && !status.equals("4");
+		}
+		return item.getAuction() != null
+				&& AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.EM_ANDAMENTO;
 	}
 
 	/** Heuristica de "ainda sem lances": valor atual segue igual ao piso (1o valor observado). */
