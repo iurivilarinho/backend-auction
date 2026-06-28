@@ -24,10 +24,15 @@ public class VehicleAlertResponse {
 	private final Double radiusKm;
 	private final Integer minYear;
 	private final BigDecimal thresholdValue;
+	private final BigDecimal soldBelowValue;
 	private final Integer fipePercent;
 	private final Integer leadTimeMinutes;
-	private final Boolean notifyClosingSoon;
+	private final Boolean notifyNewMatch;
 	private final Boolean notifyOnStart;
+	private final Boolean notifyPriceAbove;
+	private final Boolean notifyFipeDeal;
+	private final Boolean notifyClosingSoon;
+	private final Boolean notifySoldBelow;
 	private final String recipientPhone;
 	private final Boolean active;
 	private final int matches;
@@ -47,10 +52,15 @@ public class VehicleAlertResponse {
 		this.radiusKm = alert.getRadiusKm();
 		this.minYear = alert.getMinYear();
 		this.thresholdValue = alert.getThresholdValue();
+		this.soldBelowValue = alert.getSoldBelowValue();
 		this.fipePercent = alert.getFipePercent();
 		this.leadTimeMinutes = alert.getLeadTimeMinutes();
-		this.notifyClosingSoon = Boolean.TRUE.equals(alert.getNotifyClosingSoon());
+		this.notifyNewMatch = Boolean.TRUE.equals(alert.getNotifyNewMatch());
 		this.notifyOnStart = Boolean.TRUE.equals(alert.getNotifyOnStart());
+		this.notifyPriceAbove = Boolean.TRUE.equals(alert.getNotifyPriceAbove());
+		this.notifyFipeDeal = Boolean.TRUE.equals(alert.getNotifyFipeDeal());
+		this.notifyClosingSoon = Boolean.TRUE.equals(alert.getNotifyClosingSoon());
+		this.notifySoldBelow = Boolean.TRUE.equals(alert.getNotifySoldBelow());
 		this.recipientPhone = alert.getRecipientPhone();
 		this.active = alert.getActive();
 		this.matches = matches;
@@ -109,6 +119,10 @@ public class VehicleAlertResponse {
 		return thresholdValue;
 	}
 
+	public BigDecimal getSoldBelowValue() {
+		return soldBelowValue;
+	}
+
 	public Integer getFipePercent() {
 		return fipePercent;
 	}
@@ -117,8 +131,24 @@ public class VehicleAlertResponse {
 		return leadTimeMinutes;
 	}
 
+	public Boolean getNotifyNewMatch() {
+		return notifyNewMatch;
+	}
+
+	public Boolean getNotifyPriceAbove() {
+		return notifyPriceAbove;
+	}
+
+	public Boolean getNotifyFipeDeal() {
+		return notifyFipeDeal;
+	}
+
 	public Boolean getNotifyClosingSoon() {
 		return notifyClosingSoon;
+	}
+
+	public Boolean getNotifySoldBelow() {
+		return notifySoldBelow;
 	}
 
 	public Boolean getNotifyOnStart() {

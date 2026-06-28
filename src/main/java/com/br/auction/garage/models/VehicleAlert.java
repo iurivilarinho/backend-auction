@@ -69,30 +69,51 @@ public class VehicleAlert {
 	@Schema(description = "Ano minimo do veiculo (ex.: 2012 = de 2012 em diante)")
 	private Integer minYear;
 
-	// ---------------- Parametros especificos por tipo ----------------
+	// ---------------- Gatilhos habilitados (um alerta pode ligar varios) ----------------
+	// Sem nullable=false: colunas adicionadas via ddl-auto=update em tabela ja populada.
+	// O campo `type` continua preenchido (gatilho representativo) para exibicao/retrocompatibilidade.
+
+	@Column
+	@Schema(description = "Avisar quando aparecer um veiculo novo que combina com o criterio.")
+	private Boolean notifyNewMatch = Boolean.FALSE;
+
+	@Column
+	@Schema(description = "Avisar quando o leilao abrir para lances (status passa a EM_ANDAMENTO). Dispara uma vez por lote.")
+	private Boolean notifyOnStart = Boolean.FALSE;
+
+	@Column
+	@Schema(description = "Avisar quando o lance atual passar do teto (thresholdValue).")
+	private Boolean notifyPriceAbove = Boolean.FALSE;
+
+	@Column
+	@Schema(description = "Avisar quando o lance for barganha (<= fipePercent% da FIPE).")
+	private Boolean notifyFipeDeal = Boolean.FALSE;
+
+	@Column
+	@Schema(description = "Avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60).")
+	private Boolean notifyClosingSoon = Boolean.FALSE;
+
+	@Column
+	@Schema(description = "Avisar quando um lote ja encerrado for arrematado por <= alvo (soldBelowValue).")
+	private Boolean notifySoldBelow = Boolean.FALSE;
+
+	// ---------------- Parametros dos gatilhos ----------------
 
 	@Column(precision = 15, scale = 2)
-	@Schema(description = "Valor de gatilho: teto (PRICE_ABOVE) ou alvo (SOLD_BELOW)")
+	@Schema(description = "Teto: avisar quando o lance passar deste valor (PRICE_ABOVE)")
 	private BigDecimal thresholdValue;
+
+	@Column(precision = 15, scale = 2)
+	@Schema(description = "Alvo: avisar se o lote for arrematado por ate este valor (SOLD_BELOW)")
+	private BigDecimal soldBelowValue;
 
 	@Column
 	@Schema(description = "Percentual da FIPE para considerar barganha (FIPE_DEAL), ex.: 70 = 70% da FIPE")
 	private Integer fipePercent;
 
 	@Column
-	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON ou notifyClosingSoon)")
+	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON)")
 	private Integer leadTimeMinutes;
-
-	// Sem nullable=false: coluna adicionada via ddl-auto=update em tabela ja populada.
-	@Column
-	@Schema(description = "Tambem avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60). "
-			+ "Permite que um alerta de outro tipo (ex.: NEW_MATCH) emita tambem o lembrete de encerramento.")
-	private Boolean notifyClosingSoon = Boolean.FALSE;
-
-	// Sem nullable=false: coluna adicionada via ddl-auto=update em tabela ja populada.
-	@Column
-	@Schema(description = "Tambem avisar quando o leilao abrir para lances (status passa a EM_ANDAMENTO). Dispara uma vez por lote.")
-	private Boolean notifyOnStart = Boolean.FALSE;
 
 	@Column(length = 30)
 	@Schema(description = "Numero de WhatsApp (E.164 sem +) que sobrescreve o destinatario global (opcional)")
@@ -120,11 +141,23 @@ public class VehicleAlert {
 		if (this.type == null) {
 			this.type = AlertType.NEW_MATCH;
 		}
-		if (this.notifyClosingSoon == null) {
-			this.notifyClosingSoon = Boolean.FALSE;
+		if (this.notifyNewMatch == null) {
+			this.notifyNewMatch = Boolean.FALSE;
 		}
 		if (this.notifyOnStart == null) {
 			this.notifyOnStart = Boolean.FALSE;
+		}
+		if (this.notifyPriceAbove == null) {
+			this.notifyPriceAbove = Boolean.FALSE;
+		}
+		if (this.notifyFipeDeal == null) {
+			this.notifyFipeDeal = Boolean.FALSE;
+		}
+		if (this.notifyClosingSoon == null) {
+			this.notifyClosingSoon = Boolean.FALSE;
+		}
+		if (this.notifySoldBelow == null) {
+			this.notifySoldBelow = Boolean.FALSE;
 		}
 	}
 
@@ -225,6 +258,14 @@ public class VehicleAlert {
 		this.thresholdValue = thresholdValue;
 	}
 
+	public BigDecimal getSoldBelowValue() {
+		return soldBelowValue;
+	}
+
+	public void setSoldBelowValue(BigDecimal soldBelowValue) {
+		this.soldBelowValue = soldBelowValue;
+	}
+
 	public Integer getFipePercent() {
 		return fipePercent;
 	}
@@ -241,12 +282,44 @@ public class VehicleAlert {
 		this.leadTimeMinutes = leadTimeMinutes;
 	}
 
+	public Boolean getNotifyNewMatch() {
+		return notifyNewMatch;
+	}
+
+	public void setNotifyNewMatch(Boolean notifyNewMatch) {
+		this.notifyNewMatch = notifyNewMatch;
+	}
+
+	public Boolean getNotifyPriceAbove() {
+		return notifyPriceAbove;
+	}
+
+	public void setNotifyPriceAbove(Boolean notifyPriceAbove) {
+		this.notifyPriceAbove = notifyPriceAbove;
+	}
+
+	public Boolean getNotifyFipeDeal() {
+		return notifyFipeDeal;
+	}
+
+	public void setNotifyFipeDeal(Boolean notifyFipeDeal) {
+		this.notifyFipeDeal = notifyFipeDeal;
+	}
+
 	public Boolean getNotifyClosingSoon() {
 		return notifyClosingSoon;
 	}
 
 	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
 		this.notifyClosingSoon = notifyClosingSoon;
+	}
+
+	public Boolean getNotifySoldBelow() {
+		return notifySoldBelow;
+	}
+
+	public void setNotifySoldBelow(Boolean notifySoldBelow) {
+		this.notifySoldBelow = notifySoldBelow;
 	}
 
 	public Boolean getNotifyOnStart() {

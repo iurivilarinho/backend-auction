@@ -8,5 +8,7 @@ public interface AlertNotificationRepository extends JpaRepository<AlertNotifica
 
 	boolean existsByAlertIdAndTriggerKey(Long alertId, String triggerKey);
 
+	boolean existsByAlertIdAndAuctionItemId(Long alertId, Long auctionItemId);
+
 	void deleteByAlertId(Long alertId);
 }

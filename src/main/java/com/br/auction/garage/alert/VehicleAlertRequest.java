@@ -41,20 +41,35 @@ public class VehicleAlertRequest {
 	@Schema(description = "Ano minimo do veiculo (ex.: 2012)")
 	private Integer minYear;
 
-	@Schema(description = "Valor de gatilho: teto (PRICE_ABOVE) ou alvo (SOLD_BELOW)")
+	@Schema(description = "Teto: avisar quando o lance passar deste valor (PRICE_ABOVE)")
 	private BigDecimal thresholdValue;
+
+	@Schema(description = "Alvo: avisar se o lote for arrematado por ate este valor (SOLD_BELOW)")
+	private BigDecimal soldBelowValue;
 
 	@Schema(description = "Percentual da FIPE para barganha (FIPE_DEAL), ex.: 70")
 	private Integer fipePercent;
 
-	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON ou notifyClosingSoon)")
+	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON)")
 	private Integer leadTimeMinutes;
 
-	@Schema(description = "Tambem avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60)")
+	@Schema(description = "Avisar quando aparecer um veiculo novo correspondente")
+	private Boolean notifyNewMatch;
+
+	@Schema(description = "Avisar quando o leilao abrir para lances (status passa a EM_ANDAMENTO)")
+	private Boolean notifyOnStart;
+
+	@Schema(description = "Avisar quando o lance passar do teto (thresholdValue)")
+	private Boolean notifyPriceAbove;
+
+	@Schema(description = "Avisar quando o lance for barganha (<= fipePercent% da FIPE)")
+	private Boolean notifyFipeDeal;
+
+	@Schema(description = "Avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60)")
 	private Boolean notifyClosingSoon;
 
-	@Schema(description = "Tambem avisar quando o leilao abrir para lances (status passa a EM_ANDAMENTO)")
-	private Boolean notifyOnStart;
+	@Schema(description = "Avisar quando o lote for arrematado por ate o alvo (soldBelowValue)")
+	private Boolean notifySoldBelow;
 
 	@Schema(description = "Numero de WhatsApp (E.164 sem +) que sobrescreve o destinatario global")
 	private String recipientPhone;
@@ -150,6 +165,14 @@ public class VehicleAlertRequest {
 		this.thresholdValue = thresholdValue;
 	}
 
+	public BigDecimal getSoldBelowValue() {
+		return soldBelowValue;
+	}
+
+	public void setSoldBelowValue(BigDecimal soldBelowValue) {
+		this.soldBelowValue = soldBelowValue;
+	}
+
 	public Integer getFipePercent() {
 		return fipePercent;
 	}
@@ -166,12 +189,44 @@ public class VehicleAlertRequest {
 		this.leadTimeMinutes = leadTimeMinutes;
 	}
 
+	public Boolean getNotifyNewMatch() {
+		return notifyNewMatch;
+	}
+
+	public void setNotifyNewMatch(Boolean notifyNewMatch) {
+		this.notifyNewMatch = notifyNewMatch;
+	}
+
+	public Boolean getNotifyPriceAbove() {
+		return notifyPriceAbove;
+	}
+
+	public void setNotifyPriceAbove(Boolean notifyPriceAbove) {
+		this.notifyPriceAbove = notifyPriceAbove;
+	}
+
+	public Boolean getNotifyFipeDeal() {
+		return notifyFipeDeal;
+	}
+
+	public void setNotifyFipeDeal(Boolean notifyFipeDeal) {
+		this.notifyFipeDeal = notifyFipeDeal;
+	}
+
 	public Boolean getNotifyClosingSoon() {
 		return notifyClosingSoon;
 	}
 
 	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
 		this.notifyClosingSoon = notifyClosingSoon;
+	}
+
+	public Boolean getNotifySoldBelow() {
+		return notifySoldBelow;
+	}
+
+	public void setNotifySoldBelow(Boolean notifySoldBelow) {
+		this.notifySoldBelow = notifySoldBelow;
 	}
 
 	public Boolean getNotifyOnStart() {

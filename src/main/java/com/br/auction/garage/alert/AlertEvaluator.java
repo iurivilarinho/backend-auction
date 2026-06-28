@@ -42,6 +42,9 @@ public class AlertEvaluator {
 	private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM 'as' HH'h'mm");
 	private static final int DEFAULT_LEAD_MINUTES = 60;
 	private static final int DEFAULT_FIPE_PERCENT = 80;
+	/** Ordem em que os gatilhos sao avaliados/enviados para um mesmo lote. */
+	private static final AlertType[] TRIGGER_ORDER = { AlertType.NEW_MATCH, AlertType.OPENED, AlertType.PRICE_ABOVE,
+			AlertType.FIPE_DEAL, AlertType.CLOSING_SOON, AlertType.SOLD_BELOW };
 
 	private final VehicleAlertRepository alertRepository;
 	private final VehicleAlertService alertService;
@@ -95,21 +98,16 @@ public class AlertEvaluator {
 				continue;
 			}
 			boolean withinLimit = true;
-			// Gatilho principal do alerta (NEW_MATCH, PRICE_ABOVE, ...).
-			if (triggers(alert, item, now)) {
-				String key = alert.getType().name() + ":" + item.getId();
-				withinLimit = dispatch(alert, item, key, buildMessage(alert, item), recipients, sent);
-			}
-			// Aviso de abertura "avulso": dispara uma vez quando o leilao entra em andamento (toggle notifyOnStart).
-			if (withinLimit && shouldSendOpenedReminder(alert, item)) {
-				String key = "OPENED:" + item.getId();
-				withinLimit = dispatch(alert, item, key, buildOpenedReminder(alert, item), recipients, sent);
-			}
-			// Lembrete de encerramento "avulso": permite que um alerta de outro tipo tambem avise
-			// quando faltar pouco para encerrar os lances (toggle notifyClosingSoon).
-			if (withinLimit && shouldSendClosingReminder(alert, item, now)) {
-				String key = AlertType.CLOSING_SOON.name() + ":" + item.getId();
-				withinLimit = dispatch(alert, item, key, buildClosingReminder(alert, item, now), recipients, sent);
+			// Um alerta pode ter varios gatilhos ligados: avalia cada um e dispara o que estiver ativo.
+			for (AlertType trigger : TRIGGER_ORDER) {
+				if (!enabled(alert, trigger) || !fires(alert, item, trigger, now)) {
+					continue;
+				}
+				String key = trigger.name() + ":" + item.getId();
+				withinLimit = dispatch(alert, item, key, buildMessage(alert, item, trigger, now), recipients, sent);
+				if (!withinLimit) {
+					break;
+				}
 			}
 			if (!withinLimit) {
 				LOG.info("Alerta {} atingiu o limite de {} envios nesta rodada; restante fica para a proxima.",
@@ -161,32 +159,14 @@ public class AlertEvaluator {
 	}
 
 	/**
-	 * Lembrete de encerramento alem do gatilho principal: so quando o toggle esta ligado e o tipo do
-	 * alerta nao e o proprio CLOSING_SOON (que ja avisa por conta propria).
-	 */
-	private boolean shouldSendClosingReminder(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
-		return Boolean.TRUE.equals(alert.getNotifyClosingSoon())
-				&& alert.getType() != AlertType.CLOSING_SOON
-				&& triggersClosingSoon(alert, item, now);
-	}
-
-	/** Aviso de abertura: so quando o toggle esta ligado e o leilao do lote esta em andamento. */
-	private boolean shouldSendOpenedReminder(VehicleAlert alert, AuctionItem item) {
-		if (!Boolean.TRUE.equals(alert.getNotifyOnStart()) || item.getAuction() == null) {
-			return false;
-		}
-		return AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.EM_ANDAMENTO;
-	}
-
-	/**
-	 * Lotes que um alerta encontra agora (passam pelo criterio + raio + gatilho), sem enviar nada —
-	 * usado pela tela de "Achados". Limitado para nao carregar listas enormes.
+	 * Lotes que um alerta encontra agora (passam pelo criterio + raio + algum gatilho), sem enviar
+	 * nada — usado pela tela de "Achados". Limitado para nao carregar listas enormes.
 	 */
 	public List<AuctionItem> findMatches(VehicleAlert alert, int limit) {
 		LocalDateTime now = LocalDateTime.now();
 		List<AuctionItem> out = new ArrayList<>();
 		for (AuctionItem item : alertService.findCandidates(alert)) {
-			if (matchesRadius(alert, item) && triggers(alert, item, now)) {
+			if (matchesRadius(alert, item) && anyTriggerFires(alert, item, now)) {
 				out.add(item);
 				if (out.size() >= limit) {
 					break;
@@ -198,19 +178,52 @@ public class AlertEvaluator {
 
 	// ---------------------------------- Gatilhos por tipo ----------------------------------
 
-	private boolean triggers(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
-		switch (alert.getType()) {
+	private boolean anyTriggerFires(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
+		for (AlertType trigger : TRIGGER_ORDER) {
+			if (enabled(alert, trigger) && fires(alert, item, trigger, now)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Se o gatilho esta habilitado no alerta. */
+	private boolean enabled(VehicleAlert alert, AlertType trigger) {
+		switch (trigger) {
+		case NEW_MATCH:
+			return Boolean.TRUE.equals(alert.getNotifyNewMatch());
+		case OPENED:
+			return Boolean.TRUE.equals(alert.getNotifyOnStart());
+		case PRICE_ABOVE:
+			return Boolean.TRUE.equals(alert.getNotifyPriceAbove());
+		case FIPE_DEAL:
+			return Boolean.TRUE.equals(alert.getNotifyFipeDeal());
+		case CLOSING_SOON:
+			return Boolean.TRUE.equals(alert.getNotifyClosingSoon());
+		case SOLD_BELOW:
+			return Boolean.TRUE.equals(alert.getNotifySoldBelow());
+		default:
+			return false;
+		}
+	}
+
+	/** Se a condicao do gatilho esta satisfeita para o lote agora. */
+	private boolean fires(VehicleAlert alert, AuctionItem item, AlertType trigger, LocalDateTime now) {
+		switch (trigger) {
 		case NEW_MATCH:
 			return true;
-		case CLOSING_SOON:
-			return triggersClosingSoon(alert, item, now);
+		case OPENED:
+			return item.getAuction() != null
+					&& AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.EM_ANDAMENTO;
 		case PRICE_ABOVE:
 			return item.getCurrentBidValue() != null && alert.getThresholdValue() != null
 					&& item.getCurrentBidValue().compareTo(alert.getThresholdValue()) > 0;
-		case SOLD_BELOW:
-			return triggersSoldBelow(alert, item, now);
 		case FIPE_DEAL:
 			return triggersFipeDeal(alert, item);
+		case CLOSING_SOON:
+			return triggersClosingSoon(alert, item, now);
+		case SOLD_BELOW:
+			return triggersSoldBelow(alert, item, now);
 		default:
 			return false;
 		}
@@ -228,8 +241,8 @@ public class AlertEvaluator {
 	private boolean triggersSoldBelow(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
 		LocalDateTime closing = closingDate(item);
 		return closing != null && closing.isBefore(now)
-				&& item.getCurrentBidValue() != null && alert.getThresholdValue() != null
-				&& item.getCurrentBidValue().compareTo(alert.getThresholdValue()) <= 0;
+				&& item.getCurrentBidValue() != null && alert.getSoldBelowValue() != null
+				&& item.getCurrentBidValue().compareTo(alert.getSoldBelowValue()) <= 0;
 	}
 
 	private boolean triggersFipeDeal(VehicleAlert alert, AuctionItem item) {
@@ -258,28 +271,10 @@ public class AlertEvaluator {
 
 	// ---------------------------------- Mensagens ----------------------------------
 
-	private String buildMessage(VehicleAlert alert, AuctionItem item) {
+	private String buildMessage(VehicleAlert alert, AuctionItem item, AlertType trigger, LocalDateTime now) {
 		StringBuilder sb = new StringBuilder();
-		sb.append(emoji(alert.getType())).append(" *").append(alert.getName()).append("*\n");
-		sb.append(headline(alert, item)).append("\n\n");
-		appendBody(sb, alert, item);
-		return sb.toString();
-	}
-
-	/** Aviso "avulso" de abertura para lances (toggle notifyOnStart). */
-	private String buildOpenedReminder(VehicleAlert alert, AuctionItem item) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("🟢 *").append(alert.getName()).append("*\n");
-		sb.append("Abriu pra lances! Ja da pra dar lance.").append("\n\n");
-		appendBody(sb, alert, item);
-		return sb.toString();
-	}
-
-	/** Lembrete "avulso" de encerramento (toggle notifyClosingSoon em alertas de outros tipos). */
-	private String buildClosingReminder(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
-		StringBuilder sb = new StringBuilder();
-		sb.append("⏰ *").append(alert.getName()).append("*\n");
-		sb.append(closingHeadline(item, now)).append("\n\n");
+		sb.append(emoji(trigger)).append(" *").append(alert.getName()).append("*\n");
+		sb.append(headline(alert, item, trigger, now)).append("\n\n");
 		appendBody(sb, alert, item);
 		return sb.toString();
 	}
@@ -354,20 +349,22 @@ public class AlertEvaluator {
 		return "Faltam ~" + Math.max(1, minutes) + " min para encerrar os lances!";
 	}
 
-	private String headline(VehicleAlert alert, AuctionItem item) {
-		switch (alert.getType()) {
+	private String headline(VehicleAlert alert, AuctionItem item, AlertType trigger, LocalDateTime now) {
+		switch (trigger) {
 		case NEW_MATCH:
 			return "Apareceu um veiculo que combina com o seu criterio.";
-		case CLOSING_SOON:
-			return "Este lote esta encerrando em breve!";
+		case OPENED:
+			return "Abriu pra lances! Ja da pra dar lance.";
 		case PRICE_ABOVE:
 			return "O lance passou do seu teto de " + money(alert.getThresholdValue()) + ".";
-		case SOLD_BELOW:
-			return "Arrematado por " + money(item.getCurrentBidValue()) + ", abaixo do seu alvo de "
-					+ money(alert.getThresholdValue()) + ".";
 		case FIPE_DEAL:
 			int percent = alert.getFipePercent() != null ? alert.getFipePercent() : DEFAULT_FIPE_PERCENT;
 			return "Barganha: lance <= " + percent + "% da FIPE.";
+		case CLOSING_SOON:
+			return closingHeadline(item, now);
+		case SOLD_BELOW:
+			return "Arrematado por " + money(item.getCurrentBidValue()) + ", abaixo do seu alvo de "
+					+ money(alert.getSoldBelowValue()) + ".";
 		default:
 			return "";
 		}
@@ -375,14 +372,16 @@ public class AlertEvaluator {
 
 	private static String emoji(AlertType type) {
 		switch (type) {
-		case CLOSING_SOON:
-			return "⏰"; // relogio
+		case OPENED:
+			return "🟢"; // verde (abriu)
 		case PRICE_ABOVE:
 			return "⚠️"; // aviso
-		case SOLD_BELOW:
-			return "🔨"; // martelo
 		case FIPE_DEAL:
 			return "💰"; // dinheiro
+		case CLOSING_SOON:
+			return "⏰"; // relogio
+		case SOLD_BELOW:
+			return "🔨"; // martelo
 		case NEW_MATCH:
 		default:
 			return "🚗"; // carro

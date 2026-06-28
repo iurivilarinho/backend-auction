@@ -76,13 +76,12 @@ public class VehicleAlertService {
 
 	@Transactional(readOnly = true)
 	public boolean wasNotified(VehicleAlert alert, Long auctionItemId) {
-		return notificationRepository.existsByAlertIdAndTriggerKey(alert.getId(),
-				alert.getType().name() + ":" + auctionItemId);
+		// Multi-gatilho: considera "ja avisado" se qualquer gatilho do alerta ja notificou este lote.
+		return notificationRepository.existsByAlertIdAndAuctionItemId(alert.getId(), auctionItemId);
 	}
 
 	private void apply(VehicleAlert alert, VehicleAlertRequest request) {
 		alert.setName(request.getName());
-		alert.setType(request.getType() == null ? AlertType.NEW_MATCH : request.getType());
 		alert.setKeyword(blankToNull(request.getKeyword()));
 		alert.setBrand(blankToNull(request.getBrand()));
 		alert.setModel(blankToNull(request.getModel()));
@@ -92,12 +91,54 @@ public class VehicleAlertService {
 		alert.setRadiusKm(request.getRadiusKm());
 		alert.setMinYear(request.getMinYear());
 		alert.setThresholdValue(request.getThresholdValue());
+		alert.setSoldBelowValue(request.getSoldBelowValue());
 		alert.setFipePercent(request.getFipePercent());
 		alert.setLeadTimeMinutes(request.getLeadTimeMinutes());
-		alert.setNotifyClosingSoon(Boolean.TRUE.equals(request.getNotifyClosingSoon()));
-		alert.setNotifyOnStart(Boolean.TRUE.equals(request.getNotifyOnStart()));
+
+		boolean newMatch = Boolean.TRUE.equals(request.getNotifyNewMatch());
+		boolean onStart = Boolean.TRUE.equals(request.getNotifyOnStart());
+		boolean priceAbove = Boolean.TRUE.equals(request.getNotifyPriceAbove());
+		boolean fipeDeal = Boolean.TRUE.equals(request.getNotifyFipeDeal());
+		boolean closingSoon = Boolean.TRUE.equals(request.getNotifyClosingSoon());
+		boolean soldBelow = Boolean.TRUE.equals(request.getNotifySoldBelow());
+		// Um alerta sem nenhum gatilho nao avisaria nada: cai no padrao "novo correspondente".
+		if (!(newMatch || onStart || priceAbove || fipeDeal || closingSoon || soldBelow)) {
+			newMatch = true;
+		}
+		alert.setNotifyNewMatch(newMatch);
+		alert.setNotifyOnStart(onStart);
+		alert.setNotifyPriceAbove(priceAbove);
+		alert.setNotifyFipeDeal(fipeDeal);
+		alert.setNotifyClosingSoon(closingSoon);
+		alert.setNotifySoldBelow(soldBelow);
+		// `type` segue preenchido (gatilho representativo) para exibicao e por ser NOT NULL no banco.
+		alert.setType(representativeType(alert));
+
 		alert.setRecipientPhone(blankToNull(request.getRecipientPhone()));
 		alert.setActive(request.getActive() == null ? Boolean.TRUE : request.getActive());
+	}
+
+	/** Primeiro gatilho habilitado (ordem de fluxo) — usado so para exibicao/retrocompatibilidade. */
+	private AlertType representativeType(VehicleAlert alert) {
+		if (Boolean.TRUE.equals(alert.getNotifyNewMatch())) {
+			return AlertType.NEW_MATCH;
+		}
+		if (Boolean.TRUE.equals(alert.getNotifyOnStart())) {
+			return AlertType.OPENED;
+		}
+		if (Boolean.TRUE.equals(alert.getNotifyPriceAbove())) {
+			return AlertType.PRICE_ABOVE;
+		}
+		if (Boolean.TRUE.equals(alert.getNotifyFipeDeal())) {
+			return AlertType.FIPE_DEAL;
+		}
+		if (Boolean.TRUE.equals(alert.getNotifyClosingSoon())) {
+			return AlertType.CLOSING_SOON;
+		}
+		if (Boolean.TRUE.equals(alert.getNotifySoldBelow())) {
+			return AlertType.SOLD_BELOW;
+		}
+		return AlertType.NEW_MATCH;
 	}
 
 	private String blankToNull(String value) {
