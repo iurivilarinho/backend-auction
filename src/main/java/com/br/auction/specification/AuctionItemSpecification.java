@@ -60,12 +60,13 @@ public class AuctionItemSpecification {
 		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("auction").get("id"), auctionId);
 	}
 
-	public static Specification<AuctionItem> providerCodeEquals(String providerCode) {
-		if (providerCode == null || providerCode.isBlank()) {
+	/** Filtra por um ou mais provedores; lista vazia/nula = todos os provedores. */
+	public static Specification<AuctionItem> providerCodeIn(List<String> providerCodes) {
+		List<String> codes = SpecSupport.normalize(providerCodes);
+		if (codes.isEmpty()) {
 			return Specification.unrestricted();
 		}
-		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("auction").get("providerCode"),
-				providerCode.trim());
+		return (root, query, criteriaBuilder) -> root.get("auction").get("providerCode").in(codes);
 	}
 
 	public static Specification<AuctionItem> stateCodeEquals(String stateCode) {

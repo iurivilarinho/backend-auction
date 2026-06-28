@@ -104,7 +104,7 @@ public class AuctionController {
 	public ResponseEntity<Page<AuctionListResponse>> findAll(
 			@Parameter(description = "Status normalizado") @RequestParam(required = false) List<AuctionStatus> status,
 			@Parameter(description = "Busca textual") @RequestParam(required = false) String search,
-			@Parameter(description = "Codigo do provedor") @RequestParam(required = false) String providerCode,
+			@Parameter(description = "Codigos dos provedores (um ou mais)") @RequestParam(required = false) List<String> providerCode,
 			@Parameter(description = "Codigo do estado") @RequestParam(required = false) String stateCode,
 			Pageable pageable) {
 		Page<Auction> auctions = auctionService.findAll(status, search, providerCode, stateCode, pageable);
@@ -166,7 +166,7 @@ public class AuctionController {
 			@Parameter(description = "Valor FIPE minimo") @RequestParam(required = false) BigDecimal minFipe,
 			@Parameter(description = "Valor FIPE maximo") @RequestParam(required = false) BigDecimal maxFipe,
 			@Parameter(description = "Filtra por lances encerrados (true) ou nao encerrados (false)") @RequestParam(required = false) Boolean closed,
-			@Parameter(description = "Codigo do provedor") @RequestParam(required = false) String providerCode,
+			@Parameter(description = "Codigos dos provedores (um ou mais)") @RequestParam(required = false) List<String> providerCode,
 			@Parameter(description = "Codigo do estado") @RequestParam(required = false) String stateCode,
 			Pageable pageable) {
 		AuctionItemQuery query = new AuctionItemQuery(auctionId, auctionStatus, type, search, brand, year, model,
@@ -224,7 +224,7 @@ public class AuctionController {
 	public ResponseEntity<List<PriceStatResponse>> priceStats(
 			@Parameter(description = "Granularidade do agrupamento") @RequestParam(defaultValue = "BRAND_MODEL_YEAR") PriceStatGroupBy groupBy,
 			@Parameter(description = "Filtrar por uma ou mais marcas") @RequestParam(required = false) List<String> brand,
-			@Parameter(description = "Codigo do provedor") @RequestParam(required = false) String providerCode,
+			@Parameter(description = "Codigos dos provedores (um ou mais)") @RequestParam(required = false) List<String> providerCode,
 			@Parameter(description = "Codigo do estado") @RequestParam(required = false) String stateCode) {
 		return ResponseEntity.ok(auctionService.priceStats(groupBy, brand, providerCode, stateCode));
 	}
@@ -234,7 +234,7 @@ public class AuctionController {
 	@GetMapping("/auction-items/facets")
 	public ResponseEntity<AuctionItemFacetsResponse> findItemFacets(
 			@Parameter(description = "ID do leilao") @RequestParam(required = false) Long auctionId,
-			@Parameter(description = "Codigo do provedor") @RequestParam(required = false) String providerCode,
+			@Parameter(description = "Codigos dos provedores (um ou mais)") @RequestParam(required = false) List<String> providerCode,
 			@Parameter(description = "Codigo do estado") @RequestParam(required = false) String stateCode) {
 		List<String> brands = auctionService.distinctBrands(auctionId, providerCode, stateCode);
 		List<String> years = auctionService.distinctYears(auctionId, providerCode, stateCode);

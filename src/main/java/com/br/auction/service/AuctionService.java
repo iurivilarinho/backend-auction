@@ -60,13 +60,13 @@ public class AuctionService {
 	}
 
 	@Transactional(readOnly = true)
-	public Page<Auction> findAll(List<AuctionStatus> status, String search, String providerCode, String stateCode,
+	public Page<Auction> findAll(List<AuctionStatus> status, String search, List<String> providerCodes, String stateCode,
 			Pageable page) {
-		// providerCode/stateCode sao filtros opcionais: ausentes = todos os provedores/estados.
-		// Nao usar provedor padrao aqui, senao a listagem some para quem nao informa o provedor.
+		// providerCodes/stateCode sao filtros opcionais: ausentes = todos os provedores/estados.
+		// Aceita varios provedores (multi-selecao); nao usa provedor padrao para nao esconder a lista.
 		return auctionRepository.findAll(AuctionSpecification.searchAllFields(search, entityManager)
 				.and(AuctionSpecification.statusEquals(status))
-				.and(AuctionSpecification.providerCodeEquals(providerCode))
+				.and(AuctionSpecification.providerCodeIn(providerCodes))
 				.and(AuctionSpecification.stateCodeEquals(stateCode)), page);
 	}
 
@@ -90,18 +90,22 @@ public class AuctionService {
 				.and(AuctionItemSpecification.bidBetween(query.minBid(), query.maxBid()))
 				.and(AuctionItemSpecification.fipeBetween(query.minFipe(), query.maxFipe()))
 				.and(AuctionItemSpecification.closedEquals(query.closed()))
-				.and(AuctionItemSpecification.providerCodeEquals(query.providerCode()))
+				.and(AuctionItemSpecification.providerCodeIn(query.providerCodes()))
 				.and(AuctionItemSpecification.stateCodeEquals(query.stateCode())), page);
 	}
 
 	@Transactional(readOnly = true)
-	public List<String> distinctBrands(Long auctionId, String providerCode, String stateCode) {
-		return auctionItemRepository.findDistinctBrands(auctionId, blankToNull(providerCode), blankToNull(stateCode));
+	public List<String> distinctBrands(Long auctionId, List<String> providerCodes, String stateCode) {
+		List<String> codes = normalizeList(providerCodes);
+		return auctionItemRepository.findDistinctBrands(auctionId, codes.isEmpty(), orPlaceholder(codes),
+				blankToNull(stateCode));
 	}
 
 	@Transactional(readOnly = true)
-	public List<String> distinctYears(Long auctionId, String providerCode, String stateCode) {
-		return auctionItemRepository.findDistinctYears(auctionId, blankToNull(providerCode), blankToNull(stateCode));
+	public List<String> distinctYears(Long auctionId, List<String> providerCodes, String stateCode) {
+		List<String> codes = normalizeList(providerCodes);
+		return auctionItemRepository.findDistinctYears(auctionId, codes.isEmpty(), orPlaceholder(codes),
+				blankToNull(stateCode));
 	}
 
 	/** Calcula e persiste o valor FIPE de um item sob demanda (usa cache de 30 dias). */
@@ -147,12 +151,12 @@ public class AuctionService {
 	 * {@code currentBidValue} (ultimo lance), que no estado finalizado representa o valor final.
 	 */
 	@Transactional(readOnly = true)
-	public List<PriceStatResponse> priceStats(PriceStatGroupBy groupBy, List<String> brands, String providerCode,
-			String stateCode) {
-		// providerCode/stateCode opcionais (ausentes = todos os provedores/estados), sem provedor padrao.
+	public List<PriceStatResponse> priceStats(PriceStatGroupBy groupBy, List<String> brands,
+			List<String> providerCodes, String stateCode) {
+		// providerCodes/stateCode opcionais (ausentes = todos). Aceita varios provedores (multi-selecao).
 		List<AuctionItem> items = auctionItemRepository.findAll(AuctionItemSpecification.closedEquals(true)
 				.and(AuctionItemSpecification.brandIn(brands))
-				.and(AuctionItemSpecification.providerCodeEquals(providerCode))
+				.and(AuctionItemSpecification.providerCodeIn(providerCodes))
 				.and(AuctionItemSpecification.stateCodeEquals(stateCode)));
 
 		Map<String, PriceAccumulator> groups = new java.util.LinkedHashMap<>();
@@ -181,6 +185,19 @@ public class AuctionService {
 	/** Normaliza filtro textual opcional: vazio/branco vira null (sem filtro). */
 	private static String blankToNull(String value) {
 		return value == null || value.isBlank() ? null : value.trim();
+	}
+
+	/** Normaliza lista de filtros textuais: remove nulos/brancos e faz trim. */
+	private static List<String> normalizeList(List<String> values) {
+		if (values == null) {
+			return List.of();
+		}
+		return values.stream().filter(value -> value != null && !value.isBlank()).map(String::trim).toList();
+	}
+
+	/** Garante lista nao-vazia para o parametro IN da query (o valor e ignorado quando "todos"). */
+	private static List<String> orPlaceholder(List<String> codes) {
+		return codes.isEmpty() ? List.of("") : codes;
 	}
 
 	private static final class PriceAccumulator {
@@ -213,10 +230,10 @@ public class AuctionService {
 	}
 
 	@Transactional(readOnly = true)
-	public List<String[]> distinctAuctionCities(Long auctionId, String providerCode, String stateCode) {
-		String normalizedProvider = providerCode == null || providerCode.isBlank() ? null : providerCode.trim();
-		String normalizedState = stateCode == null || stateCode.isBlank() ? null : stateCode.trim();
-		return auctionRepository.findDistinctCities(auctionId, normalizedProvider, normalizedState).stream()
+	public List<String[]> distinctAuctionCities(Long auctionId, List<String> providerCodes, String stateCode) {
+		List<String> codes = normalizeList(providerCodes);
+		return auctionRepository.findDistinctCities(auctionId, codes.isEmpty(), orPlaceholder(codes),
+				blankToNull(stateCode)).stream()
 				.map(row -> new String[] { row[0] == null ? null : row[0].toString(),
 						row[1] == null ? null : row[1].toString() })
 				.toList();

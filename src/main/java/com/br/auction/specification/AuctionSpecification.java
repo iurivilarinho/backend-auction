@@ -30,11 +30,13 @@ public class AuctionSpecification {
 				.in(status.stream().map(AuctionStatus::getDescription).toList());
 	}
 
-	public static Specification<Auction> providerCodeEquals(String providerCode) {
-		if (providerCode == null || providerCode.isBlank()) {
+	/** Filtra por um ou mais provedores; lista vazia/nula = todos os provedores. */
+	public static Specification<Auction> providerCodeIn(List<String> providerCodes) {
+		List<String> codes = SpecSupport.normalize(providerCodes);
+		if (codes.isEmpty()) {
 			return Specification.unrestricted();
 		}
-		return (root, query, criteriaBuilder) -> criteriaBuilder.equal(root.get("providerCode"), providerCode.trim());
+		return (root, query, criteriaBuilder) -> root.get("providerCode").in(codes);
 	}
 
 	public static Specification<Auction> stateCodeEquals(String stateCode) {

@@ -23,6 +23,6 @@ public record AuctionItemQuery(
 		BigDecimal minFipe,
 		BigDecimal maxFipe,
 		Boolean closed,
-		String providerCode,
+		List<String> providerCodes,
 		String stateCode) {
 }

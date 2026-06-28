@@ -26,21 +26,21 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
 			SELECT DISTINCT i.brand FROM AuctionItem i
 			WHERE i.brand IS NOT NULL AND i.brand <> ''
 			AND (:auctionId IS NULL OR i.auction.id = :auctionId)
-			AND (:providerCode IS NULL OR i.auction.providerCode = :providerCode)
+			AND (:allProviders = TRUE OR i.auction.providerCode IN :providerCodes)
 			AND (:stateCode IS NULL OR i.auction.stateCode = :stateCode)
 			ORDER BY i.brand
 			""")
-	List<String> findDistinctBrands(@Param("auctionId") Long auctionId, @Param("providerCode") String providerCode,
-			@Param("stateCode") String stateCode);
+	List<String> findDistinctBrands(@Param("auctionId") Long auctionId, @Param("allProviders") boolean allProviders,
+			@Param("providerCodes") List<String> providerCodes, @Param("stateCode") String stateCode);
 
 	@Query("""
 			SELECT DISTINCT i.vehicleYear FROM AuctionItem i
 			WHERE i.vehicleYear IS NOT NULL AND i.vehicleYear <> ''
 			AND (:auctionId IS NULL OR i.auction.id = :auctionId)
-			AND (:providerCode IS NULL OR i.auction.providerCode = :providerCode)
+			AND (:allProviders = TRUE OR i.auction.providerCode IN :providerCodes)
 			AND (:stateCode IS NULL OR i.auction.stateCode = :stateCode)
 			ORDER BY i.vehicleYear DESC
 			""")
-	List<String> findDistinctYears(@Param("auctionId") Long auctionId, @Param("providerCode") String providerCode,
-			@Param("stateCode") String stateCode);
+	List<String> findDistinctYears(@Param("auctionId") Long auctionId, @Param("allProviders") boolean allProviders,
+			@Param("providerCodes") List<String> providerCodes, @Param("stateCode") String stateCode);
 }

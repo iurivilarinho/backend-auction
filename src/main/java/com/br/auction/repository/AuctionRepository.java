@@ -27,10 +27,10 @@ public interface AuctionRepository extends JpaRepository<Auction, Long>, JpaSpec
 			SELECT DISTINCT a.city, a.stateCode FROM Auction a
 			WHERE a.city IS NOT NULL AND a.city <> ''
 			AND (:auctionId IS NULL OR a.id = :auctionId)
-			AND (:providerCode IS NULL OR a.providerCode = :providerCode)
+			AND (:allProviders = TRUE OR a.providerCode IN :providerCodes)
 			AND (:stateCode IS NULL OR a.stateCode = :stateCode)
 			""")
-	List<Object[]> findDistinctCities(@Param("auctionId") Long auctionId, @Param("providerCode") String providerCode,
-			@Param("stateCode") String stateCode);
+	List<Object[]> findDistinctCities(@Param("auctionId") Long auctionId, @Param("allProviders") boolean allProviders,
+			@Param("providerCodes") List<String> providerCodes, @Param("stateCode") String stateCode);
 
 }

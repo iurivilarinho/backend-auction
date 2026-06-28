@@ -68,7 +68,7 @@ public class DistanceController {
 	@PostMapping("/warmup")
 	public ResponseEntity<java.util.Map<String, Object>> warmup(
 			@RequestParam(required = false) Long auctionId,
-			@RequestParam(required = false) String providerCode,
+			@RequestParam(required = false) List<String> providerCode,
 			@RequestParam(required = false) String stateCode) {
 		distanceService.getOrCreateSettings();
 		List<String[]> cities = auctionService.distinctAuctionCities(auctionId, providerCode, stateCode);
