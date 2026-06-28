@@ -10,6 +10,7 @@ import java.util.Map;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.br.auction.integration.enums.RunStatus;
 import com.br.auction.integration.enums.TriggerType;
@@ -52,8 +53,13 @@ public class IntegrationRunService {
 		return run;
 	}
 
-	public List<IntegrationRun> findRunningRuns() {
-		return runRepository.findByStatusOrderByStartedAtDesc(RunStatus.RUNNING);
+	// Mapeia para DTO dentro da transacao: errorMessage/payloads sao @Lob (Large Object/OID no Postgres)
+	// e so podem ser lidos com transacao ativa (fora dela: "Large Objects may not be used in auto-commit mode").
+	@Transactional(readOnly = true)
+	public List<IntegrationRunResponse> findRunningRuns() {
+		return runRepository.findByStatusOrderByStartedAtDesc(RunStatus.RUNNING).stream()
+				.map(IntegrationRunResponse::new)
+				.toList();
 	}
 
 	public IntegrationRun receiveInbound(String code, Object body) {
@@ -62,12 +68,14 @@ public class IntegrationRunService {
 		return executor.executeInbound(integration, records, TriggerType.INBOUND);
 	}
 
-	public Page<IntegrationRun> findByIntegration(Long integrationId, Pageable pageable) {
-		return runRepository.findByIntegrationId(integrationId, pageable);
+	@Transactional(readOnly = true)
+	public Page<IntegrationRunResponse> findByIntegration(Long integrationId, Pageable pageable) {
+		return runRepository.findByIntegrationId(integrationId, pageable).map(IntegrationRunResponse::new);
 	}
 
-	public Page<IntegrationRun> findAllRuns(Pageable pageable) {
-		return runRepository.findAllByOrderByStartedAtDesc(pageable);
+	@Transactional(readOnly = true)
+	public Page<IntegrationRunResponse> findAllRuns(Pageable pageable) {
+		return runRepository.findAllByOrderByStartedAtDesc(pageable).map(IntegrationRunResponse::new);
 	}
 
 	public java.util.Map<String, Long> runSummary() {
@@ -78,13 +86,16 @@ public class IntegrationRunService {
 		return summary;
 	}
 
-	public IntegrationRun findRun(Long runId) {
+	@Transactional(readOnly = true)
+	public IntegrationRunResponse findRun(Long runId) {
 		return runRepository.findById(runId)
+				.map(IntegrationRunResponse::new)
 				.orElseThrow(() -> new EntityNotFoundException("Execucao nao encontrada: " + runId));
 	}
 
-	public Page<IntegrationItemLog> findRunItems(Long runId, Pageable pageable) {
-		return itemLogRepository.findByRunId(runId, pageable);
+	@Transactional(readOnly = true)
+	public Page<IntegrationItemLogResponse> findRunItems(Long runId, Pageable pageable) {
+		return itemLogRepository.findByRunId(runId, pageable).map(IntegrationItemLogResponse::new);
 	}
 
 	private void validateExecutable(Integration integration) {

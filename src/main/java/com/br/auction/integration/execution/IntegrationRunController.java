@@ -28,17 +28,14 @@ public class IntegrationRunController {
 	@GetMapping("/integrations/{integrationId}/runs")
 	public ResponseEntity<Page<IntegrationRunResponse>> findByIntegration(@PathVariable Long integrationId,
 			Pageable pageable) {
-		Page<IntegrationRunResponse> page = service.findByIntegration(integrationId, pageable)
-				.map(IntegrationRunResponse::new);
-		return ResponseEntity.ok(page);
+		return ResponseEntity.ok(service.findByIntegration(integrationId, pageable));
 	}
 
 	@Operation(summary = "Listar todas as execucoes", description = "Lista paginada de execucoes de todas as integracoes (mais recentes primeiro).")
 	@ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
 	@GetMapping("/runs")
 	public ResponseEntity<Page<IntegrationRunResponse>> findAllRuns(Pageable pageable) {
-		Page<IntegrationRunResponse> page = service.findAllRuns(pageable).map(IntegrationRunResponse::new);
-		return ResponseEntity.ok(page);
+		return ResponseEntity.ok(service.findAllRuns(pageable));
 	}
 
 	@Operation(summary = "Resumo das execucoes por status", description = "Retorna a contagem de execucoes agrupadas por status.")
@@ -52,10 +49,7 @@ public class IntegrationRunController {
 	@ApiResponse(responseCode = "200", description = "Lista retornada com sucesso")
 	@GetMapping("/runs/running")
 	public ResponseEntity<java.util.List<IntegrationRunResponse>> findRunning() {
-		java.util.List<IntegrationRunResponse> running = service.findRunningRuns().stream()
-				.map(IntegrationRunResponse::new)
-				.toList();
-		return ResponseEntity.ok(running);
+		return ResponseEntity.ok(service.findRunningRuns());
 	}
 
 	@Operation(summary = "Buscar execucao por ID")
@@ -63,15 +57,13 @@ public class IntegrationRunController {
 	@ApiResponse(responseCode = "404", description = "Execucao nao encontrada")
 	@GetMapping("/runs/{runId}")
 	public ResponseEntity<IntegrationRunResponse> findRun(@PathVariable Long runId) {
-		return ResponseEntity.ok(new IntegrationRunResponse(service.findRun(runId)));
+		return ResponseEntity.ok(service.findRun(runId));
 	}
 
 	@Operation(summary = "Listar itens processados de uma execucao")
 	@ApiResponse(responseCode = "200", description = "Itens retornados com sucesso")
 	@GetMapping("/runs/{runId}/items")
 	public ResponseEntity<Page<IntegrationItemLogResponse>> findRunItems(@PathVariable Long runId, Pageable pageable) {
-		Page<IntegrationItemLogResponse> page = service.findRunItems(runId, pageable)
-				.map(IntegrationItemLogResponse::new);
-		return ResponseEntity.ok(page);
+		return ResponseEntity.ok(service.findRunItems(runId, pageable));
 	}
 }
