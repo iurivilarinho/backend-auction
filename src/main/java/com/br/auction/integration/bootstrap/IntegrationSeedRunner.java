@@ -333,15 +333,16 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 	}
 
 	/**
-	 * Garante que integracoes de lote ja existentes ganhem os mapeamentos de enriquecimento adicionados
-	 * depois (condicao CONSERVADO/SUCATA e ano estruturado), sem recriar a integracao. Idempotente.
+	 * Garante que integracoes de lote ja existentes ganhem o mapeamento do ano estruturado e remove o
+	 * mapeamento "condition" (descontinuado: o tipo CONSERVADO/SUCATA usa o proprio lotType/LotType do
+	 * sistema, sem campo novo). Idempotente.
 	 */
 	private void reconcileLotEnrichmentMappings(Integration integration) {
-		boolean changed = addMappingIfMissing(integration, "condition", "condition", 10);
-		changed |= addMappingIfMissing(integration, "vehicleYear", "vehicleYear", 11);
+		boolean changed = integration.getFieldMappings().removeIf(m -> "condition".equals(m.getTargetField()));
+		changed |= addMappingIfMissing(integration, "vehicleYear", "vehicleYear", 10);
 		if (changed) {
 			integrationRepository.save(integration);
-			LOG.info("Integracao {} reconciliada: mapeamentos condition/vehicleYear garantidos.",
+			LOG.info("Integracao {} reconciliada: ano estruturado garantido e mapeamento 'condition' removido.",
 					integration.getCode());
 		}
 	}
@@ -446,7 +447,6 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addField(model, "lotType", "Tipo do lote", FieldDataType.STRING, false);
 		addField(model, "vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, false);
 		addField(model, "vehicleYear", "Ano do veiculo", FieldDataType.STRING, false);
-		addField(model, "condition", "Condicao (CONSERVADO/SUCATA)", FieldDataType.STRING, false);
 		addField(model, "currentBidValue", "Lance atual", FieldDataType.STRING, false);
 		addField(model, "minimumBidValue", "Lance inicial", FieldDataType.STRING, false);
 		addField(model, "closingDate", "Encerramento do lote", FieldDataType.STRING, false);
@@ -613,8 +613,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "closingDate", "lotClosingDate", null, false, 7);
 		addMapping(integration, "lotStatus", "lotStatus", null, false, 8);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 9);
-		addMapping(integration, "condition", "condition", null, false, 10);
-		addMapping(integration, "vehicleYear", "vehicleYear", null, false, 11);
+		addMapping(integration, "vehicleYear", "vehicleYear", null, false, 10);
 		return integration;
 	}
 
@@ -641,8 +640,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "closingDate", "lotClosingDate", null, false, 7);
 		addMapping(integration, "lotStatus", "lotStatus", null, false, 8);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 9);
-		addMapping(integration, "condition", "condition", null, false, 10);
-		addMapping(integration, "vehicleYear", "vehicleYear", null, false, 11);
+		addMapping(integration, "vehicleYear", "vehicleYear", null, false, 10);
 		return integration;
 	}
 }

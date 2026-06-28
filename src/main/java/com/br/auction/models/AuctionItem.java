@@ -44,11 +44,6 @@ public class AuctionItem {
 	@Schema(description = "Descricao do veiculo")
 	private String vehicleDescription;
 
-	@Column(length = 20)
-	@Schema(description = "Condicao do veiculo no padrao do sistema: CONSERVADO ou SUCATA. Normalizada pelo "
-			+ "integrador a partir dos dados do provedor.")
-	private String condition;
-
 	@Column
 	@Schema(description = "Marca extraida da descricao do veiculo")
 	private String brand;
@@ -130,14 +125,6 @@ public class AuctionItem {
 
 	public void setVehicleDescription(String vehicleDescription) {
 		this.vehicleDescription = vehicleDescription;
-	}
-
-	public String getCondition() {
-		return condition;
-	}
-
-	public void setCondition(String condition) {
-		this.condition = condition;
 	}
 
 	public String getBrand() {

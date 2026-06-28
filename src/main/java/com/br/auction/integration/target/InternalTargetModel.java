@@ -33,8 +33,6 @@ public enum InternalTargetModel {
 			InternalTargetField.of("lotNumber", "Numero do lote", FieldDataType.STRING, null),
 			InternalTargetField.of("lotType", "Tipo do lote", FieldDataType.STRING, null),
 			InternalTargetField.of("vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, null),
-			InternalTargetField.of("condition", "Condicao/origem do veiculo", FieldDataType.STRING,
-					"Texto livre do provedor (ex.: Recuperado de Financiamento, Frota, Sucata), quando disponivel."),
 			InternalTargetField.of("currentBidValue", "Valor do lance atual (ao vivo)", FieldDataType.DECIMAL, null),
 			InternalTargetField.of("minimumBidValue", "Lance inicial/piso do lote", FieldDataType.DECIMAL,
 					"Menor valor ja visto; o sink mantem sempre o menor (nunca sobe)."),

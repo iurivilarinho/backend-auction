@@ -119,15 +119,15 @@ public class LeiloService {
 		m.put("auctionId", lot.path("leilao").path("id").asText(null));
 		m.put("lotId", text(lot, "lelId"));
 		m.put("lotNumber", lot.hasNonNull("numero") ? "Lote " + lot.get("numero").asText() : null);
-		m.put("lotType", text(lot, "tipo"));
+		// Tipo do lote no padrao do sistema (LotType: CONSERVADO/SUCATA). A "categoria" da Leilo
+		// (Carros/Motos) nao e o tipo do sistema; classificamos aqui no adapter. Os veiculos da Leilo
+		// sao retomadas de banco/seguradora (carros em uso) = CONSERVADO; SUCATA so quando a descricao
+		// indica sinistro/perda total/monta.
+		m.put("lotType", classifyCondition(lot));
 		m.put("vehicleDescription", firstNonBlank(text(lot, "nome"),
 				(veiculo.path("infocarMarca").asText("") + " " + veiculo.path("infocarModelo").asText("")).trim()));
 		// Ano vem estruturado da fonte (a descricao nem sempre traz ano); prioriza o ano-modelo.
 		m.put("vehicleYear", vehicleYear(veiculo));
-		// Condicao normalizada para o padrao do sistema (CONSERVADO/SUCATA). Os veiculos da Leilo sao
-		// retomadas de banco/seguradora (carros em uso) = CONSERVADO; so marca SUCATA quando a descricao
-		// indica sinistro/perda total/monta.
-		m.put("condition", classifyCondition(lot));
 		m.put("currentBidValue", lance != null ? lance : minimo);
 		m.put("minimumBidValue", minimo);
 		m.put("closingDate", brDate(text(lot, "dataFim")));

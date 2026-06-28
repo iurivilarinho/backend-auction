@@ -141,9 +141,6 @@ public class InternalDestinationSender {
 				item.setVehicleYear(year);
 			}
 		}
-		if (payload.containsKey("condition")) {
-			item.setCondition(text(payload.get("condition")));
-		}
 		if (payload.containsKey("currentBidValue")) {
 			item.setCurrentBidValue(parseDecimal(payload.get("currentBidValue")));
 		}
