@@ -115,7 +115,8 @@ public class LeiloService {
 		Long minimo = asLong(valor.get("minimo"));
 		Long lance = asLong(valor.path("lance").get("valor"));
 		Map<String, Object> m = new LinkedHashMap<>();
-		m.put("auctionId", lot.path("leilao").path("uid").asText(null));
+		// No objeto do lote o leilao vem com "id" (UUID), que corresponde ao "uid" da lista-site.
+		m.put("auctionId", lot.path("leilao").path("id").asText(null));
 		m.put("lotId", text(lot, "lelId"));
 		m.put("lotNumber", lot.hasNonNull("numero") ? "Lote " + lot.get("numero").asText() : null);
 		m.put("lotType", text(lot, "tipo"));
