@@ -52,6 +52,9 @@ public class AuctionItemResponse {
 	@Schema(description = "Indica se os lances do veiculo ja foram encerrados (leilao finalizado)")
 	private boolean closed;
 
+	@Schema(description = "Data/hora de encerramento DO LOTE (cada lote encerra em horario proprio)")
+	private java.time.LocalDateTime lotClosingDate;
+
 	@Schema(description = "URL que abre o leilao ja posicionado neste veiculo (ancora #lotId); cai na URL do leilao quando nao ha lote")
 	private String lotUrl;
 
@@ -76,6 +79,7 @@ public class AuctionItemResponse {
 		this.closed = item.getAuction() != null
 				&& AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.FINALIZADO;
 		this.lotUrl = AuctionItemLinks.lotUrl(item);
+		this.lotClosingDate = item.getLotClosingDate();
 		this.images = item.getImages() == null ? List.of()
 				: item.getImages().stream().map(AuctionItemImageResponse::new).toList();
 		this.auction = item.getAuction() != null ? new AuctionListResponse(item.getAuction()) : null;
@@ -135,6 +139,10 @@ public class AuctionItemResponse {
 
 	public boolean isClosed() {
 		return closed;
+	}
+
+	public java.time.LocalDateTime getLotClosingDate() {
+		return lotClosingDate;
 	}
 
 	public String getLotUrl() {

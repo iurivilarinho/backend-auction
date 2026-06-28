@@ -1,13 +1,19 @@
 package com.br.auction.service;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
@@ -31,6 +37,7 @@ public class AuctionDetranService {
 
 	private static final int LOTS_PAGE_SIZE = 100;
 	private static volatile boolean permissiveTlsConfigured;
+	private static final ObjectMapper LIVE_MAPPER = new ObjectMapper();
 
 	private final String userAgent;
 	private final int timeoutMs;
@@ -79,6 +86,84 @@ public class AuctionDetranService {
 		response.setLotsPerPage(lots.size());
 		response.setLots(lots);
 		return response;
+	}
+
+	/**
+	 * Dados AO VIVO de um lote (lance atual, segundos para encerrar, status), do endpoint que alimenta
+	 * o cronometro do site (updateSingleCountdown.php). E aqui que esta o lance real e o prazo POR LOTE
+	 * — o HTML estatico so traz o lance inicial e a data do leilao. Best-effort: devolve vazio em falha.
+	 */
+	public Optional<LotLiveData> fetchLotLive(AuctionProvider provider, String lotId) {
+		if (lotId == null || lotId.isBlank()) {
+			return Optional.empty();
+		}
+		String url = provider.getBaseUrl() + "/PDO/updateSingleCountdown.php?user=&data=" + lotId.trim();
+		try {
+			String body = connect(url)
+					.ignoreContentType(true)
+					.header("X-Requested-With", "XMLHttpRequest")
+					.execute()
+					.body();
+			JsonNode node = LIVE_MAPPER.readTree(body);
+			if (node.path("error").asBoolean(false)) {
+				return Optional.empty();
+			}
+			BigDecimal valor = parseLiveDecimal(node.get("valor"));
+			Long tempoSeconds = node.hasNonNull("tempo") ? node.get("tempo").asLong() : null;
+			String status = node.hasNonNull("statusLeilao") ? node.get("statusLeilao").asText() : null;
+			return Optional.of(new LotLiveData(valor, tempoSeconds, status));
+		} catch (IOException | RuntimeException ex) {
+			return Optional.empty();
+		}
+	}
+
+	private static BigDecimal parseLiveDecimal(JsonNode node) {
+		if (node == null || node.isNull()) {
+			return null;
+		}
+		String text = node.asText().trim();
+		if (text.isEmpty()) {
+			return null;
+		}
+		// Provedor manda ponto decimal ("3500.00"); se vier no formato BR ("3.500,00"), normaliza.
+		if (text.contains(",")) {
+			text = text.replace(".", "").replace(",", ".");
+		}
+		try {
+			return new BigDecimal(text);
+		} catch (NumberFormatException ex) {
+			return null;
+		}
+	}
+
+	/** Dados ao vivo de um lote. tempoSeconds nulo quando o lote ja encerrou. */
+	public static final class LotLiveData {
+		private final BigDecimal currentBid;
+		private final Long tempoSeconds;
+		private final String statusLeilao;
+
+		public LotLiveData(BigDecimal currentBid, Long tempoSeconds, String statusLeilao) {
+			this.currentBid = currentBid;
+			this.tempoSeconds = tempoSeconds;
+			this.statusLeilao = statusLeilao;
+		}
+
+		public BigDecimal getCurrentBid() {
+			return currentBid;
+		}
+
+		public Long getTempoSeconds() {
+			return tempoSeconds;
+		}
+
+		public String getStatusLeilao() {
+			return statusLeilao;
+		}
+
+		/** Data/hora de encerramento do lote = agora + tempo (segundos). Nula se ja encerrado. */
+		public LocalDateTime closingDateFrom(LocalDateTime now) {
+			return tempoSeconds == null ? null : now.plusSeconds(tempoSeconds);
+		}
 	}
 
 	public List<AuctionListJsonResponse> fetchAuctions() throws IOException {

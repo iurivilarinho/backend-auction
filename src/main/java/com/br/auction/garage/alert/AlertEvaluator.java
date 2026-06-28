@@ -317,7 +317,7 @@ public class AlertEvaluator {
 				}
 				sb.append("\n");
 			}
-			LocalDateTime closing = auction.getClosingDate();
+			LocalDateTime closing = closingDate(item);
 			if (closing != null) {
 				sb.append("Encerra: ").append(DATE_TIME.format(closing)).append("\n");
 			}
@@ -411,7 +411,11 @@ public class AlertEvaluator {
 		return sb.toString();
 	}
 
+	/** Encerramento do LOTE (cada lote fecha em horario proprio); cai na data do leilao se ainda nao coletado. */
 	private static LocalDateTime closingDate(AuctionItem item) {
+		if (item.getLotClosingDate() != null) {
+			return item.getLotClosingDate();
+		}
 		return item.getAuction() == null ? null : item.getAuction().getClosingDate();
 	}
 

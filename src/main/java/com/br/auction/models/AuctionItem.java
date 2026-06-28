@@ -70,6 +70,14 @@ public class AuctionItem {
 	private BigDecimal fipeValue;
 
 	@Column
+	@Schema(description = "Data/hora de encerramento DO LOTE (cada lote encerra em horario proprio; coletada do provedor por lote)")
+	private java.time.LocalDateTime lotClosingDate;
+
+	@Column(length = 20)
+	@Schema(description = "Status do lote no provedor (1=aberto, 3/4=encerrado), coletado por lote")
+	private String lotStatus;
+
+	@Column
 	@Schema(description = "Indica se as fotos do lote ja foram descobertas e baixadas (evita re-descoberta a cada coleta)")
 	private Boolean imagesSynced;
 
@@ -157,6 +165,22 @@ public class AuctionItem {
 
 	public void setMinimumBidValue(BigDecimal minimumBidValue) {
 		this.minimumBidValue = minimumBidValue;
+	}
+
+	public java.time.LocalDateTime getLotClosingDate() {
+		return lotClosingDate;
+	}
+
+	public void setLotClosingDate(java.time.LocalDateTime lotClosingDate) {
+		this.lotClosingDate = lotClosingDate;
+	}
+
+	public String getLotStatus() {
+		return lotStatus;
+	}
+
+	public void setLotStatus(String lotStatus) {
+		this.lotStatus = lotStatus;
 	}
 
 	public BigDecimal getFipeValue() {
