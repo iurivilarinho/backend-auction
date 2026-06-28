@@ -99,6 +99,7 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 						() -> integrationRepository.save(buildLotLiveIntegration(provider, source, lotLiveModel)));
 
 		seedLeilo();
+		seedMcLeilao();
 
 		LOG.info("Integracao com o provedor {} garantida (seed idempotente).", provider.getCode());
 	}
@@ -445,6 +446,141 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "status", "status", null, false, 4);
 		addMapping(integration, "closingDate", "closingDate", null, false, 5);
 		addMapping(integration, "sourceUrl", "sourceUrl", null, false, 6);
+		return integration;
+	}
+
+	// ---------------------------------- Provedor MC LEILAO (GO) ----------------------------------
+
+	private void seedMcLeilao() {
+		AuctionProvider mc = AuctionProvider.MCLEILAO_GO;
+		IntegrationSource src = sourceRepository.findByCode("MCLEILAO_GO_SOURCE")
+				.orElseGet(() -> sourceRepository.save(buildPlatformSource(mc, "MCLEILAO_GO_SOURCE")));
+		SourceModel auctionModel = sourceModelRepository.findByCode("MCLEILAO_GO_AUCTIONS")
+				.orElseGet(() -> sourceModelRepository.save(buildPlatformAuctionModel("MCLEILAO_GO_AUCTIONS",
+						"Leiloes MC Leilao", "api/feed/auctions?providerCode=MCLEILAO_GO")));
+		SourceModel lotModel = sourceModelRepository.findByCode("MCLEILAO_GO_LOTS")
+				.orElseGet(() -> sourceModelRepository.save(buildPlatformLotModel("MCLEILAO_GO_LOTS",
+						"Lotes MC Leilao", "api/feed/lots?providerCode=MCLEILAO_GO")));
+		integrationRepository.findByCode("MCLEILAO_GO_AUCTIONS_IN")
+				.ifPresentOrElse(this::reconcileSchedule, () -> integrationRepository.save(
+						buildPlatformAuctionIntegration(mc, src, auctionModel, "MCLEILAO_GO_AUCTIONS_IN")));
+		integrationRepository.findByCode("MCLEILAO_GO_LOTS_IN")
+				.ifPresentOrElse(this::reconcileSchedule, () -> integrationRepository.save(
+						buildPlatformLotIntegration(mc, src, lotModel, "MCLEILAO_GO_LOTS_IN")));
+	}
+
+	// ---------- Builders genericos de plataforma (feed proprio + framework de integracao) ----------
+
+	private IntegrationSource buildPlatformSource(AuctionProvider provider, String code) {
+		IntegrationSource source = new IntegrationSource();
+		source.setCode(code);
+		source.setName("Fonte " + provider.getName());
+		source.setDescription("Plataforma " + provider.getName() + " (API publica) consumida via feed do backend");
+		source.setConnectorType(ConnectorType.REST);
+		source.setBaseUrl(selfUrl);
+		source.setProviderCode(provider.getCode());
+		source.setProviderName(provider.getName());
+		source.setStateCode(provider.getStateCode());
+		source.setStateName(provider.getStateName());
+		source.setActive(Boolean.TRUE);
+		return source;
+	}
+
+	private SourceModel buildPlatformAuctionModel(String code, String name, String resourcePath) {
+		SourceModel model = new SourceModel();
+		model.setCode(code);
+		model.setName(name);
+		model.setDescription(name);
+		model.setConnectorType(ConnectorType.REST);
+		model.setResourcePath(resourcePath);
+		model.setItemsJsonPath("items");
+		model.setHasNextJsonPath("hasNext");
+		model.setSourceMethod(SourceMethod.GET);
+		model.setPageSize(100);
+		model.setBusinessKeyField("auctionId");
+		addField(model, "auctionId", "ID do leilao", FieldDataType.STRING, true);
+		addField(model, "auctionNoticeNumber", "Nome do leilao", FieldDataType.STRING, false);
+		addField(model, "city", "Cidade", FieldDataType.STRING, false);
+		addField(model, "auctioneer", "Leiloeiro/Comitente", FieldDataType.STRING, false);
+		addField(model, "status", "Status", FieldDataType.STRING, false);
+		addField(model, "closingDate", "Data", FieldDataType.STRING, false);
+		addField(model, "sourceUrl", "URL/edital", FieldDataType.STRING, false);
+		return model;
+	}
+
+	private SourceModel buildPlatformLotModel(String code, String name, String resourcePath) {
+		SourceModel model = new SourceModel();
+		model.setCode(code);
+		model.setName(name);
+		model.setDescription(name);
+		model.setConnectorType(ConnectorType.REST);
+		model.setResourcePath(resourcePath);
+		model.setItemsJsonPath("lots");
+		model.setHasNextJsonPath("hasNext");
+		model.setSourceMethod(SourceMethod.GET);
+		model.setPageSize(100);
+		model.setBusinessKeyField("lotId");
+		addField(model, "lotId", "ID do lote", FieldDataType.STRING, true);
+		addField(model, "auctionId", "ID do leilao pai", FieldDataType.STRING, true);
+		addField(model, "lotNumber", "Numero do lote", FieldDataType.STRING, false);
+		addField(model, "lotType", "Tipo do lote", FieldDataType.STRING, false);
+		addField(model, "vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, false);
+		addField(model, "currentBidValue", "Lance atual", FieldDataType.STRING, false);
+		addField(model, "minimumBidValue", "Lance inicial", FieldDataType.STRING, false);
+		addField(model, "closingDate", "Encerramento do lote", FieldDataType.STRING, false);
+		addField(model, "lotStatus", "Status do lote", FieldDataType.STRING, false);
+		addField(model, "imageUrls", "Imagens", FieldDataType.STRING, false);
+		return model;
+	}
+
+	private Integration buildPlatformAuctionIntegration(AuctionProvider provider, IntegrationSource source,
+			SourceModel model, String code) {
+		Integration integration = new Integration();
+		integration.setCode(code);
+		integration.setName("Leiloes " + provider.getName());
+		integration.setDescription("Coleta os leiloes de " + provider.getName() + " (a cada 15 min) no modelo Auction");
+		integration.setSource(source);
+		integration.setSourceModel(model);
+		integration.setTargetModel(InternalTargetModel.AUCTION);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
+		integration.setFetchMode(FetchMode.FULL);
+		integration.setStatus(IntegrationStatus.ACTIVE);
+		integration.setActive(Boolean.TRUE);
+		addMapping(integration, "auctionId", "detranAuctionId", null, true, 0);
+		addMapping(integration, "auctionNoticeNumber", "auctionNoticeNumber", null, false, 1);
+		addMapping(integration, "city", "city", null, false, 2);
+		addMapping(integration, "auctioneer", "auctioneer", null, false, 3);
+		addMapping(integration, "status", "status", null, false, 4);
+		addMapping(integration, "closingDate", "closingDate", null, false, 5);
+		addMapping(integration, "sourceUrl", "sourceUrl", null, false, 6);
+		return integration;
+	}
+
+	private Integration buildPlatformLotIntegration(AuctionProvider provider, IntegrationSource source,
+			SourceModel model, String code) {
+		Integration integration = new Integration();
+		integration.setCode(code);
+		integration.setName("Lotes " + provider.getName());
+		integration.setDescription("Coleta os lotes de veiculo de " + provider.getName() + " (a cada 15 min)");
+		integration.setSource(source);
+		integration.setSourceModel(model);
+		integration.setTargetModel(InternalTargetModel.AUCTION_ITEM);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
+		integration.setFetchMode(FetchMode.FULL);
+		integration.setStatus(IntegrationStatus.ACTIVE);
+		integration.setActive(Boolean.TRUE);
+		addMapping(integration, "auctionId", "auctionDetranId", null, true, 0);
+		addMapping(integration, "lotId", "lotId", null, true, 1);
+		addMapping(integration, "lotNumber", "lotNumber", null, false, 2);
+		addMapping(integration, "lotType", "lotType", null, false, 3);
+		addMapping(integration, "vehicleDescription", "vehicleDescription", null, false, 4);
+		addMapping(integration, "currentBidValue", "currentBidValue", null, false, 5);
+		addMapping(integration, "minimumBidValue", "minimumBidValue", null, false, 6);
+		addMapping(integration, "closingDate", "lotClosingDate", null, false, 7);
+		addMapping(integration, "lotStatus", "lotStatus", null, false, 8);
+		addMapping(integration, "imageUrls", "imageUrls", null, false, 9);
 		return integration;
 	}
 

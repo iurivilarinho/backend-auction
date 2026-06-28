@@ -28,6 +28,7 @@ import com.br.auction.service.AuctionDetranService;
 import com.br.auction.service.AuctionDetranService.LotLiveData;
 import com.br.auction.service.AuctionSourceFilter;
 import com.br.auction.service.LeiloService;
+import com.br.auction.service.McLeilaoService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -45,18 +46,20 @@ public class ProviderFeedController {
 
 	private final AuctionDetranService detranService;
 	private final LeiloService leiloService;
+	private final McLeilaoService mcLeilaoService;
 	private final AuctionItemRepository auctionItemRepository;
 	private final int maxAuctionsForLots;
 	private final int liveMaxPerRun;
 	private final long liveThrottleMs;
 
 	public ProviderFeedController(AuctionDetranService detranService, LeiloService leiloService,
-			AuctionItemRepository auctionItemRepository,
+			McLeilaoService mcLeilaoService, AuctionItemRepository auctionItemRepository,
 			@Value("${auction.feed.max-auctions:3}") int maxAuctionsForLots,
 			@Value("${lot.live.max-per-run:300}") int liveMaxPerRun,
 			@Value("${lot.live.throttle-ms:200}") long liveThrottleMs) {
 		this.detranService = detranService;
 		this.leiloService = leiloService;
+		this.mcLeilaoService = mcLeilaoService;
 		this.auctionItemRepository = auctionItemRepository;
 		this.maxAuctionsForLots = maxAuctionsForLots;
 		this.liveMaxPerRun = liveMaxPerRun;
@@ -71,9 +74,14 @@ public class ProviderFeedController {
 			@RequestParam(defaultValue = "1") int page,
 			@RequestParam(defaultValue = "100") int pageSize) throws IOException {
 		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
-		List<AuctionListJsonResponse> auctions = provider == AuctionProvider.LEILO_GO
-				? leiloService.fetchAuctions(provider)
-				: detranService.fetchAuctions(provider, new AuctionSourceFilter());
+		List<AuctionListJsonResponse> auctions;
+		if (provider == AuctionProvider.LEILO_GO) {
+			auctions = leiloService.fetchAuctions(provider);
+		} else if (provider == AuctionProvider.MCLEILAO_GO) {
+			auctions = mcLeilaoService.fetchAuctions(provider);
+		} else {
+			auctions = detranService.fetchAuctions(provider, new AuctionSourceFilter());
+		}
 
 		int from = Math.max(0, (page - 1) * pageSize);
 		int to = Math.min(auctions.size(), from + pageSize);
@@ -100,6 +108,15 @@ public class ProviderFeedController {
 		if (provider == AuctionProvider.LEILO_GO) {
 			LeiloService.LotsPage lotsPage = leiloService.fetchLotsPage(provider, page, pageSize);
 			return ResponseEntity.ok(page(lotsPage.lots(), lotsPage.hasNext(), page, pageSize, "lots"));
+		}
+
+		// MC LEILAO: lotes de veiculo (com detalhe) de todos os leiloes, paginados em memoria.
+		if (provider == AuctionProvider.MCLEILAO_GO) {
+			List<Map<String, Object>> mcLots = mcLeilaoService.fetchVehicleLots(provider);
+			int mcFrom = Math.max(0, (page - 1) * pageSize);
+			int mcTo = Math.min(mcLots.size(), mcFrom + pageSize);
+			List<Map<String, Object>> mcItems = mcFrom >= mcLots.size() ? List.of() : mcLots.subList(mcFrom, mcTo);
+			return ResponseEntity.ok(page(mcItems, mcTo < mcLots.size(), page, pageSize, "lots"));
 		}
 
 		// Lotes ja achatados (com o id do leilao pai) de um ou mais leiloes.
