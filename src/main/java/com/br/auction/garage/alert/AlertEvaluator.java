@@ -100,6 +100,11 @@ public class AlertEvaluator {
 				String key = alert.getType().name() + ":" + item.getId();
 				withinLimit = dispatch(alert, item, key, buildMessage(alert, item), recipients, sent);
 			}
+			// Aviso de abertura "avulso": dispara uma vez quando o leilao entra em andamento (toggle notifyOnStart).
+			if (withinLimit && shouldSendOpenedReminder(alert, item)) {
+				String key = "OPENED:" + item.getId();
+				withinLimit = dispatch(alert, item, key, buildOpenedReminder(alert, item), recipients, sent);
+			}
 			// Lembrete de encerramento "avulso": permite que um alerta de outro tipo tambem avise
 			// quando faltar pouco para encerrar os lances (toggle notifyClosingSoon).
 			if (withinLimit && shouldSendClosingReminder(alert, item, now)) {
@@ -163,6 +168,14 @@ public class AlertEvaluator {
 		return Boolean.TRUE.equals(alert.getNotifyClosingSoon())
 				&& alert.getType() != AlertType.CLOSING_SOON
 				&& triggersClosingSoon(alert, item, now);
+	}
+
+	/** Aviso de abertura: so quando o toggle esta ligado e o leilao do lote esta em andamento. */
+	private boolean shouldSendOpenedReminder(VehicleAlert alert, AuctionItem item) {
+		if (!Boolean.TRUE.equals(alert.getNotifyOnStart()) || item.getAuction() == null) {
+			return false;
+		}
+		return AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.EM_ANDAMENTO;
 	}
 
 	/**
@@ -249,6 +262,15 @@ public class AlertEvaluator {
 		StringBuilder sb = new StringBuilder();
 		sb.append(emoji(alert.getType())).append(" *").append(alert.getName()).append("*\n");
 		sb.append(headline(alert, item)).append("\n\n");
+		appendBody(sb, alert, item);
+		return sb.toString();
+	}
+
+	/** Aviso "avulso" de abertura para lances (toggle notifyOnStart). */
+	private String buildOpenedReminder(VehicleAlert alert, AuctionItem item) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("🟢 *").append(alert.getName()).append("*\n");
+		sb.append("Abriu pra lances! Ja da pra dar lance.").append("\n\n");
 		appendBody(sb, alert, item);
 		return sb.toString();
 	}

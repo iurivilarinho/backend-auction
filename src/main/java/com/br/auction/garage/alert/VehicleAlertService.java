@@ -95,6 +95,7 @@ public class VehicleAlertService {
 		alert.setFipePercent(request.getFipePercent());
 		alert.setLeadTimeMinutes(request.getLeadTimeMinutes());
 		alert.setNotifyClosingSoon(Boolean.TRUE.equals(request.getNotifyClosingSoon()));
+		alert.setNotifyOnStart(Boolean.TRUE.equals(request.getNotifyOnStart()));
 		alert.setRecipientPhone(blankToNull(request.getRecipientPhone()));
 		alert.setActive(request.getActive() == null ? Boolean.TRUE : request.getActive());
 	}

@@ -53,6 +53,9 @@ public class VehicleAlertRequest {
 	@Schema(description = "Tambem avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60)")
 	private Boolean notifyClosingSoon;
 
+	@Schema(description = "Tambem avisar quando o leilao abrir para lances (status passa a EM_ANDAMENTO)")
+	private Boolean notifyOnStart;
+
 	@Schema(description = "Numero de WhatsApp (E.164 sem +) que sobrescreve o destinatario global")
 	private String recipientPhone;
 
@@ -169,6 +172,14 @@ public class VehicleAlertRequest {
 
 	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
 		this.notifyClosingSoon = notifyClosingSoon;
+	}
+
+	public Boolean getNotifyOnStart() {
+		return notifyOnStart;
+	}
+
+	public void setNotifyOnStart(Boolean notifyOnStart) {
+		this.notifyOnStart = notifyOnStart;
 	}
 
 	public String getRecipientPhone() {

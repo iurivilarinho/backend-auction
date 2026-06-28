@@ -89,6 +89,11 @@ public class VehicleAlert {
 			+ "Permite que um alerta de outro tipo (ex.: NEW_MATCH) emita tambem o lembrete de encerramento.")
 	private Boolean notifyClosingSoon = Boolean.FALSE;
 
+	// Sem nullable=false: coluna adicionada via ddl-auto=update em tabela ja populada.
+	@Column
+	@Schema(description = "Tambem avisar quando o leilao abrir para lances (status passa a EM_ANDAMENTO). Dispara uma vez por lote.")
+	private Boolean notifyOnStart = Boolean.FALSE;
+
 	@Column(length = 30)
 	@Schema(description = "Numero de WhatsApp (E.164 sem +) que sobrescreve o destinatario global (opcional)")
 	private String recipientPhone;
@@ -117,6 +122,9 @@ public class VehicleAlert {
 		}
 		if (this.notifyClosingSoon == null) {
 			this.notifyClosingSoon = Boolean.FALSE;
+		}
+		if (this.notifyOnStart == null) {
+			this.notifyOnStart = Boolean.FALSE;
 		}
 	}
 
@@ -239,6 +247,14 @@ public class VehicleAlert {
 
 	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
 		this.notifyClosingSoon = notifyClosingSoon;
+	}
+
+	public Boolean getNotifyOnStart() {
+		return notifyOnStart;
+	}
+
+	public void setNotifyOnStart(Boolean notifyOnStart) {
+		this.notifyOnStart = notifyOnStart;
 	}
 
 	public String getRecipientPhone() {
