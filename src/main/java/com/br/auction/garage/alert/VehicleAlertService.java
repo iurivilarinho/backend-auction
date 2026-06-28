@@ -94,6 +94,7 @@ public class VehicleAlertService {
 		alert.setThresholdValue(request.getThresholdValue());
 		alert.setFipePercent(request.getFipePercent());
 		alert.setLeadTimeMinutes(request.getLeadTimeMinutes());
+		alert.setNotifyClosingSoon(Boolean.TRUE.equals(request.getNotifyClosingSoon()));
 		alert.setRecipientPhone(blankToNull(request.getRecipientPhone()));
 		alert.setActive(request.getActive() == null ? Boolean.TRUE : request.getActive());
 	}

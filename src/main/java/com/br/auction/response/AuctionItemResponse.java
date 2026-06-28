@@ -6,6 +6,7 @@ import java.util.List;
 import com.br.auction.enums.AuctionStatus;
 import com.br.auction.enums.LotType;
 import com.br.auction.models.AuctionItem;
+import com.br.auction.service.AuctionItemLinks;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -51,6 +52,9 @@ public class AuctionItemResponse {
 	@Schema(description = "Indica se os lances do veiculo ja foram encerrados (leilao finalizado)")
 	private boolean closed;
 
+	@Schema(description = "URL que abre o leilao ja posicionado neste veiculo (ancora #lotId); cai na URL do leilao quando nao ha lote")
+	private String lotUrl;
+
 	@Schema(description = "Imagens do veiculo (servidas pelo backend)")
 	private List<AuctionItemImageResponse> images;
 
@@ -71,6 +75,7 @@ public class AuctionItemResponse {
 		this.fipeValue = item.getFipeValue();
 		this.closed = item.getAuction() != null
 				&& AuctionStatus.fromSource(item.getAuction().getStatus()) == AuctionStatus.FINALIZADO;
+		this.lotUrl = AuctionItemLinks.lotUrl(item);
 		this.images = item.getImages() == null ? List.of()
 				: item.getImages().stream().map(AuctionItemImageResponse::new).toList();
 		this.auction = item.getAuction() != null ? new AuctionListResponse(item.getAuction()) : null;
@@ -130,6 +135,10 @@ public class AuctionItemResponse {
 
 	public boolean isClosed() {
 		return closed;
+	}
+
+	public String getLotUrl() {
+		return lotUrl;
 	}
 
 	public List<AuctionItemImageResponse> getImages() {

@@ -80,8 +80,14 @@ public class VehicleAlert {
 	private Integer fipePercent;
 
 	@Column
-	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON)")
+	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON ou notifyClosingSoon)")
 	private Integer leadTimeMinutes;
+
+	// Sem nullable=false: coluna adicionada via ddl-auto=update em tabela ja populada.
+	@Column
+	@Schema(description = "Tambem avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60). "
+			+ "Permite que um alerta de outro tipo (ex.: NEW_MATCH) emita tambem o lembrete de encerramento.")
+	private Boolean notifyClosingSoon = Boolean.FALSE;
 
 	@Column(length = 30)
 	@Schema(description = "Numero de WhatsApp (E.164 sem +) que sobrescreve o destinatario global (opcional)")
@@ -108,6 +114,9 @@ public class VehicleAlert {
 		}
 		if (this.type == null) {
 			this.type = AlertType.NEW_MATCH;
+		}
+		if (this.notifyClosingSoon == null) {
+			this.notifyClosingSoon = Boolean.FALSE;
 		}
 	}
 
@@ -222,6 +231,14 @@ public class VehicleAlert {
 
 	public void setLeadTimeMinutes(Integer leadTimeMinutes) {
 		this.leadTimeMinutes = leadTimeMinutes;
+	}
+
+	public Boolean getNotifyClosingSoon() {
+		return notifyClosingSoon;
+	}
+
+	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
+		this.notifyClosingSoon = notifyClosingSoon;
 	}
 
 	public String getRecipientPhone() {

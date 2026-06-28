@@ -26,6 +26,7 @@ public class VehicleAlertResponse {
 	private final BigDecimal thresholdValue;
 	private final Integer fipePercent;
 	private final Integer leadTimeMinutes;
+	private final Boolean notifyClosingSoon;
 	private final String recipientPhone;
 	private final Boolean active;
 	private final int matches;
@@ -47,6 +48,7 @@ public class VehicleAlertResponse {
 		this.thresholdValue = alert.getThresholdValue();
 		this.fipePercent = alert.getFipePercent();
 		this.leadTimeMinutes = alert.getLeadTimeMinutes();
+		this.notifyClosingSoon = Boolean.TRUE.equals(alert.getNotifyClosingSoon());
 		this.recipientPhone = alert.getRecipientPhone();
 		this.active = alert.getActive();
 		this.matches = matches;
@@ -111,6 +113,10 @@ public class VehicleAlertResponse {
 
 	public Integer getLeadTimeMinutes() {
 		return leadTimeMinutes;
+	}
+
+	public Boolean getNotifyClosingSoon() {
+		return notifyClosingSoon;
 	}
 
 	public String getRecipientPhone() {

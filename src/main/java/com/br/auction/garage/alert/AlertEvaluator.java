@@ -20,11 +20,13 @@ import com.br.auction.garage.models.AlertNotification;
 import com.br.auction.garage.models.VehicleAlert;
 import com.br.auction.garage.repository.AlertNotificationRepository;
 import com.br.auction.garage.repository.VehicleAlertRepository;
+import com.br.auction.enums.AuctionStatus;
 import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.notification.NotificationService;
 import com.br.auction.notification.WhatsappNotifier;
 import com.br.auction.notification.WhatsappNotifier.SendResult;
+import com.br.auction.service.AuctionItemLinks;
 import com.br.auction.service.DistanceService;
 
 /**
@@ -87,50 +89,80 @@ public class AlertEvaluator {
 			LOG.debug("Alerta {} sem destinos habilitados; ignorado.", alert.getId());
 			return;
 		}
-		int sent = 0;
-		int triggered = 0;
+		int[] sent = { 0 };
 		for (AuctionItem item : alertService.findCandidates(alert)) {
-			if (!matchesRadius(alert, item) || !triggers(alert, item, now)) {
+			if (!matchesRadius(alert, item)) {
 				continue;
 			}
-			triggered++;
-			String triggerKey = alert.getType().name() + ":" + item.getId();
-			if (notificationRepository.existsByAlertIdAndTriggerKey(alert.getId(), triggerKey)) {
-				continue;
+			boolean withinLimit = true;
+			// Gatilho principal do alerta (NEW_MATCH, PRICE_ABOVE, ...).
+			if (triggers(alert, item, now)) {
+				String key = alert.getType().name() + ":" + item.getId();
+				withinLimit = dispatch(alert, item, key, buildMessage(alert, item), recipients, sent);
 			}
-			if (sent >= maxPerRun) {
+			// Lembrete de encerramento "avulso": permite que um alerta de outro tipo tambem avise
+			// quando faltar pouco para encerrar os lances (toggle notifyClosingSoon).
+			if (withinLimit && shouldSendClosingReminder(alert, item, now)) {
+				String key = AlertType.CLOSING_SOON.name() + ":" + item.getId();
+				withinLimit = dispatch(alert, item, key, buildClosingReminder(alert, item, now), recipients, sent);
+			}
+			if (!withinLimit) {
 				LOG.info("Alerta {} atingiu o limite de {} envios nesta rodada; restante fica para a proxima.",
 						alert.getId(), maxPerRun);
 				break;
 			}
-			String message = buildMessage(alert, item);
-			boolean anySent = false;
-			String detail = null;
-			for (String to : recipients) {
-				SendResult result = notifier.send(to, message);
-				detail = result.getDetail();
-				if (result.isSent()) {
-					anySent = true;
-					sent++;
-					pace();
-				} else {
-					LOG.warn("Alerta {} item {} para {} nao enviado: {}", alert.getId(), item.getId(), to,
-							result.getDetail());
-				}
-				if (sent >= maxPerRun) {
-					break;
-				}
+		}
+		if (sent[0] > 0) {
+			LOG.info("Alerta {} ({}): {} envio(s) para {} destino(s).",
+					alert.getId(), alert.getName(), sent[0], recipients.size());
+		}
+	}
+
+	/**
+	 * Envia uma notificacao (deduplicada por gatilho) para todos os destinos. Devolve {@code false}
+	 * quando o limite por rodada foi atingido — sinal para a varredura parar este alerta.
+	 */
+	private boolean dispatch(VehicleAlert alert, AuctionItem item, String triggerKey, String message,
+			List<String> recipients, int[] sent) {
+		if (notificationRepository.existsByAlertIdAndTriggerKey(alert.getId(), triggerKey)) {
+			return true;
+		}
+		if (sent[0] >= maxPerRun) {
+			return false;
+		}
+		boolean anySent = false;
+		String detail = null;
+		for (String to : recipients) {
+			SendResult result = notifier.send(to, message);
+			detail = result.getDetail();
+			if (result.isSent()) {
+				anySent = true;
+				sent[0]++;
+				pace();
+			} else {
+				LOG.warn("Alerta {} item {} para {} nao enviado: {}", alert.getId(), item.getId(), to,
+						result.getDetail());
 			}
-			if (anySent) {
-				// Dedup por gatilho (alerta+item): vale para todos os destinos desta rodada.
-				notificationRepository.save(new AlertNotification(alert.getId(), item.getId(), triggerKey,
-						SendResult.Status.SENT.name(), detail));
+			if (sent[0] >= maxPerRun) {
+				break;
 			}
 		}
-		if (sent > 0) {
-			LOG.info("Alerta {} ({}): {} envio(s) para {} destino(s), {} gatilho(s).",
-					alert.getId(), alert.getName(), sent, recipients.size(), triggered);
+		if (anySent) {
+			// Dedup por gatilho (alerta+item): vale para todos os destinos desta rodada.
+			notificationRepository.save(new AlertNotification(alert.getId(), item.getId(), triggerKey,
+					SendResult.Status.SENT.name(), detail));
 		}
+		return sent[0] < maxPerRun;
+	}
+
+	/**
+	 * Lembrete de encerramento alem do gatilho principal: so quando o toggle esta ligado e o tipo do
+	 * alerta nao e o proprio CLOSING_SOON (que ja avisa por conta propria).
+	 */
+	private boolean shouldSendClosingReminder(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
+		return Boolean.TRUE.equals(alert.getNotifyClosingSoon())
+				&& alert.getType() != AlertType.CLOSING_SOON
+				&& triggersClosingSoon(alert, item, now);
 	}
 
 	/**
@@ -214,10 +246,29 @@ public class AlertEvaluator {
 	// ---------------------------------- Mensagens ----------------------------------
 
 	private String buildMessage(VehicleAlert alert, AuctionItem item) {
-		Auction auction = item.getAuction();
 		StringBuilder sb = new StringBuilder();
 		sb.append(emoji(alert.getType())).append(" *").append(alert.getName()).append("*\n");
 		sb.append(headline(alert, item)).append("\n\n");
+		appendBody(sb, alert, item);
+		return sb.toString();
+	}
+
+	/** Lembrete "avulso" de encerramento (toggle notifyClosingSoon em alertas de outros tipos). */
+	private String buildClosingReminder(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
+		StringBuilder sb = new StringBuilder();
+		sb.append("⏰ *").append(alert.getName()).append("*\n");
+		sb.append(closingHeadline(item, now)).append("\n\n");
+		appendBody(sb, alert, item);
+		return sb.toString();
+	}
+
+	/** Corpo comum: status (da pra dar lance?), veiculo, valores, local, encerramento e link direto. */
+	private void appendBody(StringBuilder sb, VehicleAlert alert, AuctionItem item) {
+		Auction auction = item.getAuction();
+		String status = statusLine(auction);
+		if (status != null) {
+			sb.append(status).append("\n");
+		}
 		sb.append(describe(item)).append("\n");
 		if (item.getCurrentBidValue() != null) {
 			sb.append("Lance atual: ").append(money(item.getCurrentBidValue())).append("\n");
@@ -243,11 +294,42 @@ public class AlertEvaluator {
 			if (closing != null) {
 				sb.append("Encerra: ").append(DATE_TIME.format(closing)).append("\n");
 			}
-			if (notBlank(auction.getSourceUrl())) {
-				sb.append("\n").append(auction.getSourceUrl());
+			String lotUrl = AuctionItemLinks.lotUrl(item);
+			if (notBlank(lotUrl)) {
+				sb.append("\nVer o veiculo: ").append(lotUrl);
 			}
 		}
-		return sb.toString();
+	}
+
+	/** Linha de status: deixa claro se ja da pra dar lance. */
+	private static String statusLine(Auction auction) {
+		if (auction == null) {
+			return null;
+		}
+		switch (AuctionStatus.fromSource(auction.getStatus())) {
+		case EM_ANDAMENTO:
+			return "🟢 Em andamento — ja da pra dar lance";
+		case FINALIZADO:
+			return "🔴 Encerrado — lances ja fecharam";
+		case PUBLICADO:
+		default:
+			return "🟡 Publicado — lances ainda nao abriram";
+		}
+	}
+
+	private static String closingHeadline(AuctionItem item, LocalDateTime now) {
+		LocalDateTime closing = closingDate(item);
+		if (closing == null || !closing.isAfter(now)) {
+			return "Os lances estao encerrando!";
+		}
+		long minutes = Duration.between(now, closing).toMinutes();
+		if (minutes >= 60) {
+			long hours = minutes / 60;
+			long rest = minutes % 60;
+			String faltam = rest > 0 ? hours + "h" + String.format("%02d", rest) : hours + "h";
+			return "Faltam ~" + faltam + " para encerrar os lances!";
+		}
+		return "Faltam ~" + Math.max(1, minutes) + " min para encerrar os lances!";
 	}
 
 	private String headline(VehicleAlert alert, AuctionItem item) {

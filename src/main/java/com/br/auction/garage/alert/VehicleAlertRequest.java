@@ -47,8 +47,11 @@ public class VehicleAlertRequest {
 	@Schema(description = "Percentual da FIPE para barganha (FIPE_DEAL), ex.: 70")
 	private Integer fipePercent;
 
-	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON)")
+	@Schema(description = "Antecedencia em minutos para o aviso de encerramento (CLOSING_SOON ou notifyClosingSoon)")
 	private Integer leadTimeMinutes;
+
+	@Schema(description = "Tambem avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60)")
+	private Boolean notifyClosingSoon;
 
 	@Schema(description = "Numero de WhatsApp (E.164 sem +) que sobrescreve o destinatario global")
 	private String recipientPhone;
@@ -158,6 +161,14 @@ public class VehicleAlertRequest {
 
 	public void setLeadTimeMinutes(Integer leadTimeMinutes) {
 		this.leadTimeMinutes = leadTimeMinutes;
+	}
+
+	public Boolean getNotifyClosingSoon() {
+		return notifyClosingSoon;
+	}
+
+	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
+		this.notifyClosingSoon = notifyClosingSoon;
 	}
 
 	public String getRecipientPhone() {
