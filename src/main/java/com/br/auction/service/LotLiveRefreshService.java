@@ -2,6 +2,7 @@ package com.br.auction.service;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -44,6 +45,26 @@ public class LotLiveRefreshService {
 
 	public RefreshResult refreshAll(long throttleMs) {
 		return refreshItems(itemRepository.findAll(), throttleMs);
+	}
+
+	/**
+	 * Atualiza um lote de lotes ABERTOS, priorizando os ainda sem prazo (lotes novos) e os que encerram
+	 * mais cedo — que sao os que mais importam para os alertas. Mantem o volume baixo (anti-ban).
+	 */
+	public RefreshResult refreshOpenBatch(int batchSize, long throttleMs) {
+		List<AuctionItem> open = itemRepository.findAll().stream()
+				.filter(LotLiveRefreshService::isOpen)
+				.sorted(Comparator.comparing(AuctionItem::getLotClosingDate,
+						Comparator.nullsFirst(Comparator.naturalOrder())))
+				.limit(Math.max(0, batchSize))
+				.toList();
+		return refreshItems(open, throttleMs);
+	}
+
+	/** Lote aberto (ainda aceita lance): status desconhecido ou diferente de encerrado (3/4). */
+	private static boolean isOpen(AuctionItem item) {
+		String status = item.getLotStatus();
+		return status == null || !(status.equals("3") || status.equals("4"));
 	}
 
 	private RefreshResult refreshItems(List<AuctionItem> items, long throttleMs) {

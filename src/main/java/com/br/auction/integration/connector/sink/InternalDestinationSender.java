@@ -124,13 +124,17 @@ public class InternalDestinationSender {
 		item.setBrand(vehicleInfo.getBrand());
 		item.setModel(vehicleInfo.getModel());
 		item.setVehicleYear(vehicleInfo.getYear());
-		BigDecimal currentBid = parseDecimal(payload.get("currentBidValue"));
-		item.setCurrentBidValue(currentBid);
-		// Piso do lote: o menor valor ja visto (1a coleta = lance inicial, antes de abrir lances).
-		// Permite inferir "ainda sem lances" quando o valor atual segue igual ao piso.
-		if (currentBid != null
-				&& (item.getMinimumBidValue() == null || currentBid.compareTo(item.getMinimumBidValue()) < 0)) {
-			item.setMinimumBidValue(currentBid);
+		// O HTML da lista so traz o LANCE INICIAL (piso), nunca o lance ao vivo. Por isso ele alimenta
+		// o piso (minimumBidValue), e NAO sobrescreve o currentBidValue — este e mantido pelo refresh
+		// ao vivo (LotLiveRefreshService). Em lote novo, semeamos currentBidValue com o inicial ate o
+		// primeiro refresh chegar.
+		BigDecimal initialBid = parseDecimal(payload.get("currentBidValue"));
+		if (initialBid != null
+				&& (item.getMinimumBidValue() == null || initialBid.compareTo(item.getMinimumBidValue()) < 0)) {
+			item.setMinimumBidValue(initialBid);
+		}
+		if (item.getCurrentBidValue() == null) {
+			item.setCurrentBidValue(initialBid);
 		}
 		item.setFipeValue(parseDecimal(payload.get("fipeValue")));
 		imageStorageService.syncLotImages(item, toUrlList(payload.get("imageUrls")));
