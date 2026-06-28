@@ -12,7 +12,6 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.br.auction.enums.AuctionProvider;
 import com.br.auction.enums.AuctionStatus;
 import com.br.auction.enums.LotType;
 import com.br.auction.models.Auction;
@@ -63,13 +62,12 @@ public class AuctionService {
 	@Transactional(readOnly = true)
 	public Page<Auction> findAll(List<AuctionStatus> status, String search, String providerCode, String stateCode,
 			Pageable page) {
-		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
-		String resolvedStateCode = stateCode == null || stateCode.isBlank() ? provider.getStateCode() : stateCode;
-
+		// providerCode/stateCode sao filtros opcionais: ausentes = todos os provedores/estados.
+		// Nao usar provedor padrao aqui, senao a listagem some para quem nao informa o provedor.
 		return auctionRepository.findAll(AuctionSpecification.searchAllFields(search, entityManager)
 				.and(AuctionSpecification.statusEquals(status))
-				.and(AuctionSpecification.providerCodeEquals(provider.getCode()))
-				.and(AuctionSpecification.stateCodeEquals(resolvedStateCode)), page);
+				.and(AuctionSpecification.providerCodeEquals(providerCode))
+				.and(AuctionSpecification.stateCodeEquals(stateCode)), page);
 	}
 
 	@Transactional(readOnly = true)
@@ -80,10 +78,8 @@ public class AuctionService {
 
 	@Transactional(readOnly = true)
 	public Page<AuctionItem> findAllItems(AuctionItemQuery query, Pageable page) {
-		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(query.providerCode());
-		String resolvedStateCode = query.stateCode() == null || query.stateCode().isBlank() ? provider.getStateCode()
-				: query.stateCode();
-
+		// providerCode/stateCode sao filtros opcionais (ausentes = todos). Sem provedor padrao: quando a
+		// tela abre os itens por auctionId (sem provider), o proprio leilao ja delimita provedor/estado.
 		return auctionItemRepository.findAll(AuctionItemSpecification.searchAllFields(query.search(), entityManager)
 				.and(AuctionItemSpecification.auctionIdEquals(query.auctionId()))
 				.and(AuctionItemSpecification.typeEquals(query.type()))
@@ -94,22 +90,18 @@ public class AuctionService {
 				.and(AuctionItemSpecification.bidBetween(query.minBid(), query.maxBid()))
 				.and(AuctionItemSpecification.fipeBetween(query.minFipe(), query.maxFipe()))
 				.and(AuctionItemSpecification.closedEquals(query.closed()))
-				.and(AuctionItemSpecification.providerCodeEquals(provider.getCode()))
-				.and(AuctionItemSpecification.stateCodeEquals(resolvedStateCode)), page);
+				.and(AuctionItemSpecification.providerCodeEquals(query.providerCode()))
+				.and(AuctionItemSpecification.stateCodeEquals(query.stateCode())), page);
 	}
 
 	@Transactional(readOnly = true)
 	public List<String> distinctBrands(Long auctionId, String providerCode, String stateCode) {
-		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
-		String resolvedStateCode = stateCode == null || stateCode.isBlank() ? provider.getStateCode() : stateCode;
-		return auctionItemRepository.findDistinctBrands(auctionId, provider.getCode(), resolvedStateCode);
+		return auctionItemRepository.findDistinctBrands(auctionId, blankToNull(providerCode), blankToNull(stateCode));
 	}
 
 	@Transactional(readOnly = true)
 	public List<String> distinctYears(Long auctionId, String providerCode, String stateCode) {
-		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
-		String resolvedStateCode = stateCode == null || stateCode.isBlank() ? provider.getStateCode() : stateCode;
-		return auctionItemRepository.findDistinctYears(auctionId, provider.getCode(), resolvedStateCode);
+		return auctionItemRepository.findDistinctYears(auctionId, blankToNull(providerCode), blankToNull(stateCode));
 	}
 
 	/** Calcula e persiste o valor FIPE de um item sob demanda (usa cache de 30 dias). */
@@ -157,13 +149,11 @@ public class AuctionService {
 	@Transactional(readOnly = true)
 	public List<PriceStatResponse> priceStats(PriceStatGroupBy groupBy, List<String> brands, String providerCode,
 			String stateCode) {
-		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
-		String resolvedStateCode = stateCode == null || stateCode.isBlank() ? provider.getStateCode() : stateCode;
-
+		// providerCode/stateCode opcionais (ausentes = todos os provedores/estados), sem provedor padrao.
 		List<AuctionItem> items = auctionItemRepository.findAll(AuctionItemSpecification.closedEquals(true)
 				.and(AuctionItemSpecification.brandIn(brands))
-				.and(AuctionItemSpecification.providerCodeEquals(provider.getCode()))
-				.and(AuctionItemSpecification.stateCodeEquals(resolvedStateCode)));
+				.and(AuctionItemSpecification.providerCodeEquals(providerCode))
+				.and(AuctionItemSpecification.stateCodeEquals(stateCode)));
 
 		Map<String, PriceAccumulator> groups = new java.util.LinkedHashMap<>();
 		for (AuctionItem item : items) {
@@ -186,6 +176,11 @@ public class AuctionService {
 
 	private String blankToDash(String value) {
 		return value == null || value.isBlank() ? "-" : value;
+	}
+
+	/** Normaliza filtro textual opcional: vazio/branco vira null (sem filtro). */
+	private static String blankToNull(String value) {
+		return value == null || value.isBlank() ? null : value.trim();
 	}
 
 	private static final class PriceAccumulator {
