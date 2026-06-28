@@ -118,6 +118,23 @@ class AlertEvaluatorTest {
 	}
 
 	@Test
+	void noBidsClosingDisparaPertoDeEncerrarSemLances() {
+		VehicleAlert alert = baseAlert();
+		alert.setNotifyNoBidsClosing(true);
+		alert.setLeadTimeMinutes(60);
+		LocalDateTime now = LocalDateTime.now();
+		AuctionItem semLances = item("Em Andamento", BigDecimal.valueOf(500), null, now.plusMinutes(30));
+		semLances.setMinimumBidValue(BigDecimal.valueOf(500));
+		AuctionItem comLances = item("Em Andamento", BigDecimal.valueOf(600), null, now.plusMinutes(30));
+		comLances.setMinimumBidValue(BigDecimal.valueOf(500));
+		AuctionItem longe = item("Em Andamento", BigDecimal.valueOf(500), null, now.plusMinutes(120));
+		longe.setMinimumBidValue(BigDecimal.valueOf(500));
+		when(alertService.findCandidates(alert)).thenReturn(List.of(semLances, comLances, longe));
+
+		assertThat(evaluator.findMatches(alert, 10)).containsExactly(semLances);
+	}
+
+	@Test
 	void soldBelowDisparaSoAposEncerrarEDentroDoAlvo() {
 		VehicleAlert alert = baseAlert();
 		alert.setNotifySoldBelow(true);

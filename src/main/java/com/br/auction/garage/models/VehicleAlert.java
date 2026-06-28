@@ -94,6 +94,10 @@ public class VehicleAlert {
 	private Boolean notifyClosingSoon = Boolean.FALSE;
 
 	@Column
+	@Schema(description = "Avisar quando faltar pouco para encerrar e o lote ainda estiver sem lances (usa leadTimeMinutes).")
+	private Boolean notifyNoBidsClosing = Boolean.FALSE;
+
+	@Column
 	@Schema(description = "Avisar quando um lote ja encerrado for arrematado por <= alvo (soldBelowValue).")
 	private Boolean notifySoldBelow = Boolean.FALSE;
 
@@ -155,6 +159,9 @@ public class VehicleAlert {
 		}
 		if (this.notifyClosingSoon == null) {
 			this.notifyClosingSoon = Boolean.FALSE;
+		}
+		if (this.notifyNoBidsClosing == null) {
+			this.notifyNoBidsClosing = Boolean.FALSE;
 		}
 		if (this.notifySoldBelow == null) {
 			this.notifySoldBelow = Boolean.FALSE;
@@ -312,6 +319,14 @@ public class VehicleAlert {
 
 	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
 		this.notifyClosingSoon = notifyClosingSoon;
+	}
+
+	public Boolean getNotifyNoBidsClosing() {
+		return notifyNoBidsClosing;
+	}
+
+	public void setNotifyNoBidsClosing(Boolean notifyNoBidsClosing) {
+		this.notifyNoBidsClosing = notifyNoBidsClosing;
 	}
 
 	public Boolean getNotifySoldBelow() {

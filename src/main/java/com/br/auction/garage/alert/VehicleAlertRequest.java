@@ -68,6 +68,9 @@ public class VehicleAlertRequest {
 	@Schema(description = "Avisar quando faltar pouco para encerrar os lances (usa leadTimeMinutes, padrao 60)")
 	private Boolean notifyClosingSoon;
 
+	@Schema(description = "Avisar quando faltar pouco para encerrar e o lote ainda estiver sem lances")
+	private Boolean notifyNoBidsClosing;
+
 	@Schema(description = "Avisar quando o lote for arrematado por ate o alvo (soldBelowValue)")
 	private Boolean notifySoldBelow;
 
@@ -219,6 +222,14 @@ public class VehicleAlertRequest {
 
 	public void setNotifyClosingSoon(Boolean notifyClosingSoon) {
 		this.notifyClosingSoon = notifyClosingSoon;
+	}
+
+	public Boolean getNotifyNoBidsClosing() {
+		return notifyNoBidsClosing;
+	}
+
+	public void setNotifyNoBidsClosing(Boolean notifyNoBidsClosing) {
+		this.notifyNoBidsClosing = notifyNoBidsClosing;
 	}
 
 	public Boolean getNotifySoldBelow() {

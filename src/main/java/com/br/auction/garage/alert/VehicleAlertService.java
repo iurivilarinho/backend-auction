@@ -100,9 +100,10 @@ public class VehicleAlertService {
 		boolean priceAbove = Boolean.TRUE.equals(request.getNotifyPriceAbove());
 		boolean fipeDeal = Boolean.TRUE.equals(request.getNotifyFipeDeal());
 		boolean closingSoon = Boolean.TRUE.equals(request.getNotifyClosingSoon());
+		boolean noBidsClosing = Boolean.TRUE.equals(request.getNotifyNoBidsClosing());
 		boolean soldBelow = Boolean.TRUE.equals(request.getNotifySoldBelow());
 		// Um alerta sem nenhum gatilho nao avisaria nada: cai no padrao "novo correspondente".
-		if (!(newMatch || onStart || priceAbove || fipeDeal || closingSoon || soldBelow)) {
+		if (!(newMatch || onStart || priceAbove || fipeDeal || closingSoon || noBidsClosing || soldBelow)) {
 			newMatch = true;
 		}
 		alert.setNotifyNewMatch(newMatch);
@@ -110,6 +111,7 @@ public class VehicleAlertService {
 		alert.setNotifyPriceAbove(priceAbove);
 		alert.setNotifyFipeDeal(fipeDeal);
 		alert.setNotifyClosingSoon(closingSoon);
+		alert.setNotifyNoBidsClosing(noBidsClosing);
 		alert.setNotifySoldBelow(soldBelow);
 		// `type` segue preenchido (gatilho representativo) para exibicao e por ser NOT NULL no banco.
 		alert.setType(representativeType(alert));
@@ -134,6 +136,9 @@ public class VehicleAlertService {
 		}
 		if (Boolean.TRUE.equals(alert.getNotifyClosingSoon())) {
 			return AlertType.CLOSING_SOON;
+		}
+		if (Boolean.TRUE.equals(alert.getNotifyNoBidsClosing())) {
+			return AlertType.NO_BIDS_CLOSING;
 		}
 		if (Boolean.TRUE.equals(alert.getNotifySoldBelow())) {
 			return AlertType.SOLD_BELOW;

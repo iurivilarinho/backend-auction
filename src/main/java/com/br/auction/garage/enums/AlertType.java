@@ -22,6 +22,9 @@ public enum AlertType {
 	/** Um lote vigiado esta perto de encerrar (faltam <= leadTimeMinutes para o closingDate). */
 	CLOSING_SOON("Encerrando em breve"),
 
+	/** Lote perto de encerrar e ainda sem lances (valor atual ainda no piso/lance inicial). */
+	NO_BIDS_CLOSING("Encerrando sem lances"),
+
 	/** Um lote ja encerrado foi arrematado por valor <= alvo (soldBelowValue). */
 	SOLD_BELOW("Arrematado abaixo do alvo");
 

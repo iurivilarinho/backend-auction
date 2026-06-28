@@ -124,7 +124,14 @@ public class InternalDestinationSender {
 		item.setBrand(vehicleInfo.getBrand());
 		item.setModel(vehicleInfo.getModel());
 		item.setVehicleYear(vehicleInfo.getYear());
-		item.setCurrentBidValue(parseDecimal(payload.get("currentBidValue")));
+		BigDecimal currentBid = parseDecimal(payload.get("currentBidValue"));
+		item.setCurrentBidValue(currentBid);
+		// Piso do lote: o menor valor ja visto (1a coleta = lance inicial, antes de abrir lances).
+		// Permite inferir "ainda sem lances" quando o valor atual segue igual ao piso.
+		if (currentBid != null
+				&& (item.getMinimumBidValue() == null || currentBid.compareTo(item.getMinimumBidValue()) < 0)) {
+			item.setMinimumBidValue(currentBid);
+		}
 		item.setFipeValue(parseDecimal(payload.get("fipeValue")));
 		imageStorageService.syncLotImages(item, toUrlList(payload.get("imageUrls")));
 

@@ -61,6 +61,11 @@ public class AuctionItem {
 	private BigDecimal currentBidValue;
 
 	@Column(precision = 15, scale = 2)
+	@Schema(description = "Menor valor ja observado para o lote (piso/lance inicial), capturado na primeira coleta. "
+			+ "Usado para inferir 'ainda sem lances' quando o valor atual segue igual ao piso.")
+	private BigDecimal minimumBidValue;
+
+	@Column(precision = 15, scale = 2)
 	@Schema(description = "Valor da tabela FIPE")
 	private BigDecimal fipeValue;
 
@@ -144,6 +149,14 @@ public class AuctionItem {
 
 	public void setCurrentBidValue(BigDecimal currentBidValue) {
 		this.currentBidValue = currentBidValue;
+	}
+
+	public BigDecimal getMinimumBidValue() {
+		return minimumBidValue;
+	}
+
+	public void setMinimumBidValue(BigDecimal minimumBidValue) {
+		this.minimumBidValue = minimumBidValue;
 	}
 
 	public BigDecimal getFipeValue() {

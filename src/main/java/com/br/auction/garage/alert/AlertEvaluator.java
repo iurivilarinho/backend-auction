@@ -44,7 +44,7 @@ public class AlertEvaluator {
 	private static final int DEFAULT_FIPE_PERCENT = 80;
 	/** Ordem em que os gatilhos sao avaliados/enviados para um mesmo lote. */
 	private static final AlertType[] TRIGGER_ORDER = { AlertType.NEW_MATCH, AlertType.OPENED, AlertType.PRICE_ABOVE,
-			AlertType.FIPE_DEAL, AlertType.CLOSING_SOON, AlertType.SOLD_BELOW };
+			AlertType.FIPE_DEAL, AlertType.NO_BIDS_CLOSING, AlertType.CLOSING_SOON, AlertType.SOLD_BELOW };
 
 	private final VehicleAlertRepository alertRepository;
 	private final VehicleAlertService alertService;
@@ -200,6 +200,8 @@ public class AlertEvaluator {
 			return Boolean.TRUE.equals(alert.getNotifyFipeDeal());
 		case CLOSING_SOON:
 			return Boolean.TRUE.equals(alert.getNotifyClosingSoon());
+		case NO_BIDS_CLOSING:
+			return Boolean.TRUE.equals(alert.getNotifyNoBidsClosing());
 		case SOLD_BELOW:
 			return Boolean.TRUE.equals(alert.getNotifySoldBelow());
 		default:
@@ -222,11 +224,19 @@ public class AlertEvaluator {
 			return triggersFipeDeal(alert, item);
 		case CLOSING_SOON:
 			return triggersClosingSoon(alert, item, now);
+		case NO_BIDS_CLOSING:
+			return triggersClosingSoon(alert, item, now) && hasNoBids(item);
 		case SOLD_BELOW:
 			return triggersSoldBelow(alert, item, now);
 		default:
 			return false;
 		}
+	}
+
+	/** Heuristica de "ainda sem lances": valor atual segue igual ao piso (1o valor observado). */
+	private boolean hasNoBids(AuctionItem item) {
+		return item.getCurrentBidValue() != null && item.getMinimumBidValue() != null
+				&& item.getCurrentBidValue().compareTo(item.getMinimumBidValue()) <= 0;
 	}
 
 	private boolean triggersClosingSoon(VehicleAlert alert, AuctionItem item, LocalDateTime now) {
@@ -362,6 +372,8 @@ public class AlertEvaluator {
 			return "Barganha: lance <= " + percent + "% da FIPE.";
 		case CLOSING_SOON:
 			return closingHeadline(item, now);
+		case NO_BIDS_CLOSING:
+			return "Encerrando e ainda SEM lances — chance de arrematar pelo lance minimo!";
 		case SOLD_BELOW:
 			return "Arrematado por " + money(item.getCurrentBidValue()) + ", abaixo do seu alvo de "
 					+ money(alert.getSoldBelowValue()) + ".";
@@ -380,6 +392,8 @@ public class AlertEvaluator {
 			return "💰"; // dinheiro
 		case CLOSING_SOON:
 			return "⏰"; // relogio
+		case NO_BIDS_CLOSING:
+			return "💸"; // barganha (sem lances)
 		case SOLD_BELOW:
 			return "🔨"; // martelo
 		case NEW_MATCH:

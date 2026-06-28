@@ -32,6 +32,7 @@ public class VehicleAlertResponse {
 	private final Boolean notifyPriceAbove;
 	private final Boolean notifyFipeDeal;
 	private final Boolean notifyClosingSoon;
+	private final Boolean notifyNoBidsClosing;
 	private final Boolean notifySoldBelow;
 	private final String recipientPhone;
 	private final Boolean active;
@@ -60,6 +61,7 @@ public class VehicleAlertResponse {
 		this.notifyPriceAbove = Boolean.TRUE.equals(alert.getNotifyPriceAbove());
 		this.notifyFipeDeal = Boolean.TRUE.equals(alert.getNotifyFipeDeal());
 		this.notifyClosingSoon = Boolean.TRUE.equals(alert.getNotifyClosingSoon());
+		this.notifyNoBidsClosing = Boolean.TRUE.equals(alert.getNotifyNoBidsClosing());
 		this.notifySoldBelow = Boolean.TRUE.equals(alert.getNotifySoldBelow());
 		this.recipientPhone = alert.getRecipientPhone();
 		this.active = alert.getActive();
@@ -145,6 +147,10 @@ public class VehicleAlertResponse {
 
 	public Boolean getNotifyClosingSoon() {
 		return notifyClosingSoon;
+	}
+
+	public Boolean getNotifyNoBidsClosing() {
+		return notifyNoBidsClosing;
 	}
 
 	public Boolean getNotifySoldBelow() {
