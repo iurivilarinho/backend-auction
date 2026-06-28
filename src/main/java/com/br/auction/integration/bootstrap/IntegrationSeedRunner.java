@@ -98,6 +98,8 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 				.ifPresentOrElse(this::reconcileSchedule,
 						() -> integrationRepository.save(buildLotLiveIntegration(provider, source, lotLiveModel)));
 
+		seedLeilo();
+
 		LOG.info("Integracao com o provedor {} garantida (seed idempotente).", provider.getCode());
 	}
 
@@ -340,5 +342,135 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		mapping.setUniqueKey(uniqueKey);
 		mapping.setOrdem(ordem);
 		integration.getFieldMappings().add(mapping);
+	}
+
+	// ---------------------------------- Provedor LEILO (Grupo Leilo / GO) ----------------------------------
+	// Consome a API publica da Leilo via feed proprio (/api/feed/{auctions,lots}?providerCode=LEILO_GO).
+
+	private void seedLeilo() {
+		AuctionProvider leilo = AuctionProvider.LEILO_GO;
+		IntegrationSource leiloSource = sourceRepository.findByCode("LEILO_GO_SOURCE")
+				.orElseGet(() -> sourceRepository.save(buildLeiloSource(leilo)));
+		SourceModel auctionModel = sourceModelRepository.findByCode("LEILO_GO_AUCTIONS")
+				.orElseGet(() -> sourceModelRepository.save(buildLeiloAuctionModel()));
+		SourceModel lotModel = sourceModelRepository.findByCode("LEILO_GO_LOTS")
+				.orElseGet(() -> sourceModelRepository.save(buildLeiloLotModel()));
+		integrationRepository.findByCode("LEILO_GO_AUCTIONS_IN")
+				.ifPresentOrElse(this::reconcileSchedule,
+						() -> integrationRepository.save(buildLeiloAuctionIntegration(leilo, leiloSource, auctionModel)));
+		integrationRepository.findByCode("LEILO_GO_LOTS_IN")
+				.ifPresentOrElse(this::reconcileSchedule,
+						() -> integrationRepository.save(buildLeiloLotIntegration(leilo, leiloSource, lotModel)));
+	}
+
+	private IntegrationSource buildLeiloSource(AuctionProvider provider) {
+		IntegrationSource source = new IntegrationSource();
+		source.setCode("LEILO_GO_SOURCE");
+		source.setName("Fonte " + provider.getName());
+		source.setDescription("Plataforma Leilo (API publica) consumida via feed do backend");
+		source.setConnectorType(ConnectorType.REST);
+		source.setBaseUrl(selfUrl);
+		source.setProviderCode(provider.getCode());
+		source.setProviderName(provider.getName());
+		source.setStateCode(provider.getStateCode());
+		source.setStateName(provider.getStateName());
+		source.setActive(Boolean.TRUE);
+		return source;
+	}
+
+	private SourceModel buildLeiloAuctionModel() {
+		SourceModel model = new SourceModel();
+		model.setCode("LEILO_GO_AUCTIONS");
+		model.setName("Leiloes Leilo");
+		model.setDescription("Leiloes da plataforma Leilo");
+		model.setConnectorType(ConnectorType.REST);
+		model.setResourcePath("api/feed/auctions?providerCode=LEILO_GO");
+		model.setItemsJsonPath("items");
+		model.setHasNextJsonPath("hasNext");
+		model.setSourceMethod(SourceMethod.GET);
+		model.setPageSize(100);
+		model.setBusinessKeyField("auctionId");
+		addField(model, "auctionId", "ID do leilao", FieldDataType.STRING, true);
+		addField(model, "auctionNoticeNumber", "Nome do leilao", FieldDataType.STRING, false);
+		addField(model, "city", "Cidade", FieldDataType.STRING, false);
+		addField(model, "auctioneer", "Leiloeiro", FieldDataType.STRING, false);
+		addField(model, "status", "Status", FieldDataType.STRING, false);
+		addField(model, "closingDate", "Data", FieldDataType.STRING, false);
+		addField(model, "sourceUrl", "URL/edital", FieldDataType.STRING, false);
+		return model;
+	}
+
+	private SourceModel buildLeiloLotModel() {
+		SourceModel model = new SourceModel();
+		model.setCode("LEILO_GO_LOTS");
+		model.setName("Lotes Leilo");
+		model.setDescription("Lotes de veiculo da plataforma Leilo (lance ao vivo, prazo por lote, status)");
+		model.setConnectorType(ConnectorType.REST);
+		model.setResourcePath("api/feed/lots?providerCode=LEILO_GO");
+		model.setItemsJsonPath("lots");
+		model.setHasNextJsonPath("hasNext");
+		model.setSourceMethod(SourceMethod.GET);
+		model.setPageSize(100);
+		model.setBusinessKeyField("lotId");
+		addField(model, "lotId", "ID do lote", FieldDataType.STRING, true);
+		addField(model, "auctionId", "ID do leilao pai", FieldDataType.STRING, true);
+		addField(model, "lotNumber", "Numero do lote", FieldDataType.STRING, false);
+		addField(model, "lotType", "Tipo do lote", FieldDataType.STRING, false);
+		addField(model, "vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, false);
+		addField(model, "currentBidValue", "Lance atual", FieldDataType.STRING, false);
+		addField(model, "minimumBidValue", "Lance inicial", FieldDataType.STRING, false);
+		addField(model, "closingDate", "Encerramento do lote", FieldDataType.STRING, false);
+		addField(model, "lotStatus", "Status do lote", FieldDataType.STRING, false);
+		addField(model, "imageUrls", "Imagens", FieldDataType.STRING, false);
+		return model;
+	}
+
+	private Integration buildLeiloAuctionIntegration(AuctionProvider provider, IntegrationSource source, SourceModel model) {
+		Integration integration = new Integration();
+		integration.setCode("LEILO_GO_AUCTIONS_IN");
+		integration.setName("Leiloes " + provider.getName());
+		integration.setDescription("Coleta os leiloes da Leilo (a cada 15 min) no modelo interno Auction");
+		integration.setSource(source);
+		integration.setSourceModel(model);
+		integration.setTargetModel(InternalTargetModel.AUCTION);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
+		integration.setFetchMode(FetchMode.FULL);
+		integration.setStatus(IntegrationStatus.ACTIVE);
+		integration.setActive(Boolean.TRUE);
+		addMapping(integration, "auctionId", "detranAuctionId", null, true, 0);
+		addMapping(integration, "auctionNoticeNumber", "auctionNoticeNumber", null, false, 1);
+		addMapping(integration, "city", "city", null, false, 2);
+		addMapping(integration, "auctioneer", "auctioneer", null, false, 3);
+		addMapping(integration, "status", "status", null, false, 4);
+		addMapping(integration, "closingDate", "closingDate", null, false, 5);
+		addMapping(integration, "sourceUrl", "sourceUrl", null, false, 6);
+		return integration;
+	}
+
+	private Integration buildLeiloLotIntegration(AuctionProvider provider, IntegrationSource source, SourceModel model) {
+		Integration integration = new Integration();
+		integration.setCode("LEILO_GO_LOTS_IN");
+		integration.setName("Lotes " + provider.getName());
+		integration.setDescription("Coleta os lotes de veiculo da Leilo (a cada 15 min) no modelo interno AuctionItem");
+		integration.setSource(source);
+		integration.setSourceModel(model);
+		integration.setTargetModel(InternalTargetModel.AUCTION_ITEM);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
+		integration.setFetchMode(FetchMode.FULL);
+		integration.setStatus(IntegrationStatus.ACTIVE);
+		integration.setActive(Boolean.TRUE);
+		addMapping(integration, "auctionId", "auctionDetranId", null, true, 0);
+		addMapping(integration, "lotId", "lotId", null, true, 1);
+		addMapping(integration, "lotNumber", "lotNumber", null, false, 2);
+		addMapping(integration, "lotType", "lotType", null, false, 3);
+		addMapping(integration, "vehicleDescription", "vehicleDescription", null, false, 4);
+		addMapping(integration, "currentBidValue", "currentBidValue", null, false, 5);
+		addMapping(integration, "minimumBidValue", "minimumBidValue", null, false, 6);
+		addMapping(integration, "closingDate", "lotClosingDate", null, false, 7);
+		addMapping(integration, "lotStatus", "lotStatus", null, false, 8);
+		addMapping(integration, "imageUrls", "imageUrls", null, false, 9);
+		return integration;
 	}
 }

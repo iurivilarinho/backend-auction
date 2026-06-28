@@ -4,7 +4,9 @@ import java.util.Arrays;
 
 public enum AuctionProvider {
 
-	DETRAN_MG("DETRAN_MG", "DETRAN Minas Gerais", "MG", "Minas Gerais", "https://leilao.detran.mg.gov.br");
+	DETRAN_MG("DETRAN_MG", "DETRAN Minas Gerais", "MG", "Minas Gerais", "https://leilao.detran.mg.gov.br"),
+	// Plataforma Leilo (Grupo Leilo), leiloeiro de GO. API publica em api.leilo.com.br (ver LeiloService).
+	LEILO_GO("LEILO_GO", "Leilo (Grupo Leilo)", "GO", "Goias", "https://api.leilo.com.br");
 
 	private final String code;
 	private final String name;
