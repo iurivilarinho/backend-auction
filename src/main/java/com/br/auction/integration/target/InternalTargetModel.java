@@ -33,7 +33,12 @@ public enum InternalTargetModel {
 			InternalTargetField.of("lotNumber", "Numero do lote", FieldDataType.STRING, null),
 			InternalTargetField.of("lotType", "Tipo do lote", FieldDataType.STRING, null),
 			InternalTargetField.of("vehicleDescription", "Descricao do veiculo", FieldDataType.STRING, null),
-			InternalTargetField.of("currentBidValue", "Valor do lance atual", FieldDataType.DECIMAL, null),
+			InternalTargetField.of("currentBidValue", "Valor do lance atual (ao vivo)", FieldDataType.DECIMAL, null),
+			InternalTargetField.of("minimumBidValue", "Lance inicial/piso do lote", FieldDataType.DECIMAL,
+					"Menor valor ja visto; o sink mantem sempre o menor (nunca sobe)."),
+			InternalTargetField.of("lotClosingDate", "Encerramento do lote", FieldDataType.DATETIME,
+					"Cada lote encerra em horario proprio. Aceita dd/MM/yyyy HH:mm ou ISO-8601."),
+			InternalTargetField.of("lotStatus", "Status do lote no provedor", FieldDataType.STRING, null),
 			InternalTargetField.of("fipeValue", "Valor FIPE", FieldDataType.DECIMAL, null),
 			InternalTargetField.of("imageUrls", "Imagens do veiculo (URLs)", FieldDataType.STRING,
 					"Aceita uma lista/array de URLs; as imagens sao baixadas e salvas no banco.")));

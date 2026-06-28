@@ -83,13 +83,20 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 				.orElseGet(() -> sourceModelRepository.save(buildAuctionModel()));
 		SourceModel lotModel = sourceModelRepository.findByCode("DETRAN_MG_LOTS")
 				.orElseGet(() -> sourceModelRepository.save(buildLotModel()));
+		SourceModel lotLiveModel = sourceModelRepository.findByCode("DETRAN_MG_LOTS_LIVE")
+				.orElseGet(() -> sourceModelRepository.save(buildLotLiveModel()));
 
 		integrationRepository.findByCode("DETRAN_MG_AUCTIONS_IN")
 				.ifPresentOrElse(this::reconcileSchedule,
 						() -> integrationRepository.save(buildAuctionIntegration(provider, source, auctionModel)));
 		integrationRepository.findByCode("DETRAN_MG_LOTS_IN")
+				.ifPresentOrElse(integration -> {
+					reconcileSchedule(integration);
+					reconcileLotFloorMapping(integration);
+				}, () -> integrationRepository.save(buildLotIntegration(provider, source, lotModel)));
+		integrationRepository.findByCode("DETRAN_MG_LOTS_LIVE_IN")
 				.ifPresentOrElse(this::reconcileSchedule,
-						() -> integrationRepository.save(buildLotIntegration(provider, source, lotModel)));
+						() -> integrationRepository.save(buildLotLiveIntegration(provider, source, lotLiveModel)));
 
 		LOG.info("Integracao com o provedor {} garantida (seed idempotente).", provider.getCode());
 	}
@@ -252,9 +259,74 @@ public class IntegrationSeedRunner implements CommandLineRunner {
 		addMapping(integration, "lotNumber", "lotNumber", null, false, 2);
 		addMapping(integration, "lotType", "lotType", null, false, 3);
 		addMapping(integration, "vehicleDescription", "vehicleDescription", null, false, 4);
-		addMapping(integration, "currentBidValue", "currentBidValue", "MONEY_BR", false, 5);
+		// O lance do HTML e o inicial/piso -> alimenta minimumBidValue (o sink mantem o menor).
+		// O lance AO VIVO vem da integracao DETRAN_MG_LOTS_LIVE_IN.
+		addMapping(integration, "currentBidValue", "minimumBidValue", "MONEY_BR", false, 5);
 		addMapping(integration, "imageUrls", "imageUrls", null, false, 6);
 		return integration;
+	}
+
+	private SourceModel buildLotLiveModel() {
+		SourceModel model = new SourceModel();
+		model.setCode("DETRAN_MG_LOTS_LIVE");
+		model.setName("Lotes ao vivo do provedor");
+		model.setDescription("Lance ao vivo, prazo por lote e status (coletados lote a lote)");
+		model.setConnectorType(ConnectorType.REST);
+		model.setResourcePath("api/feed/lots-live");
+		model.setItemsJsonPath("lots");
+		model.setHasNextJsonPath("hasNext");
+		model.setSourceMethod(SourceMethod.GET);
+		model.setPageSize(50);
+		model.setBusinessKeyField("lotId");
+		addField(model, "lotId", "ID do lote", FieldDataType.STRING, true);
+		addField(model, "auctionId", "ID do leilao pai", FieldDataType.STRING, true);
+		addField(model, "currentBidValue", "Lance atual (ao vivo)", FieldDataType.STRING, false);
+		addField(model, "closingDate", "Encerramento do lote", FieldDataType.STRING, false);
+		addField(model, "lotStatus", "Status do lote", FieldDataType.STRING, false);
+		return model;
+	}
+
+	private Integration buildLotLiveIntegration(AuctionProvider provider, IntegrationSource source, SourceModel model) {
+		Integration integration = new Integration();
+		integration.setCode("DETRAN_MG_LOTS_LIVE_IN");
+		integration.setName("Lotes ao vivo " + provider.getName());
+		integration.setDescription(
+				"Atualiza lance ao vivo, prazo por lote e status (a cada 15 min) no modelo interno AuctionItem");
+		integration.setSource(source);
+		integration.setSourceModel(model);
+		integration.setTargetModel(InternalTargetModel.AUCTION_ITEM);
+		integration.setTriggerMode(TriggerMode.SCHEDULED);
+		integration.setCronExpression(CRON_EVERY_15_MIN);
+		integration.setFetchMode(FetchMode.FULL);
+		integration.setStatus(IntegrationStatus.ACTIVE);
+		integration.setActive(Boolean.TRUE);
+		addMapping(integration, "auctionId", "auctionDetranId", null, true, 0);
+		addMapping(integration, "lotId", "lotId", null, true, 1);
+		addMapping(integration, "currentBidValue", "currentBidValue", null, false, 2);
+		addMapping(integration, "closingDate", "lotClosingDate", null, false, 3);
+		addMapping(integration, "lotStatus", "lotStatus", null, false, 4);
+		return integration;
+	}
+
+	/**
+	 * Reconciliacao para bancos ja existentes: a integracao de lotes passou a mandar o lance do HTML
+	 * para o piso (minimumBidValue), e nao mais para currentBidValue (que agora e do feed ao vivo).
+	 */
+	private void reconcileLotFloorMapping(Integration integration) {
+		boolean changed = false;
+		for (FieldMapping mapping : integration.getFieldMappings()) {
+			if ("currentBidValue".equals(mapping.getSourceField())
+					&& !"minimumBidValue".equals(mapping.getTargetField())) {
+				mapping.setTargetField("minimumBidValue");
+				mapping.setTransform("MONEY_BR");
+				changed = true;
+			}
+		}
+		if (changed) {
+			integrationRepository.save(integration);
+			LOG.info("Integracao {} reconciliada: lance do HTML agora alimenta o piso (minimumBidValue).",
+					integration.getCode());
+		}
 	}
 
 	private void addMapping(Integration integration, String sourceField, String targetField, String transform,

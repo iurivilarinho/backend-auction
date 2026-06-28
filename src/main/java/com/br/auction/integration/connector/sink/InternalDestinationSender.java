@@ -116,28 +116,47 @@ public class InternalDestinationSender {
 
 		item.setAuction(auction);
 		item.setLotId(lotId);
-		item.setLotNumber(text(payload.get("lotNumber")));
-		item.setLotType(text(payload.get("lotType")));
-		String vehicleDescription = text(payload.get("vehicleDescription"));
-		item.setVehicleDescription(vehicleDescription);
-		VehicleInfo vehicleInfo = vehicleParserService.parse(vehicleDescription);
-		item.setBrand(vehicleInfo.getBrand());
-		item.setModel(vehicleInfo.getModel());
-		item.setVehicleYear(vehicleInfo.getYear());
-		// O HTML da lista so traz o LANCE INICIAL (piso), nunca o lance ao vivo. Por isso ele alimenta
-		// o piso (minimumBidValue), e NAO sobrescreve o currentBidValue — este e mantido pelo refresh
-		// ao vivo (LotLiveRefreshService). Em lote novo, semeamos currentBidValue com o inicial ate o
-		// primeiro refresh chegar.
-		BigDecimal initialBid = parseDecimal(payload.get("currentBidValue"));
-		if (initialBid != null
-				&& (item.getMinimumBidValue() == null || initialBid.compareTo(item.getMinimumBidValue()) < 0)) {
-			item.setMinimumBidValue(initialBid);
+		// Atualizacao PARCIAL: so grava os campos que vieram no payload (mapeados nesta integracao).
+		// Assim varias integracoes atualizam campos diferentes do mesmo lote sem uma apagar a outra
+		// (ex.: a de lotes cuida de descricao/foto/piso; a "ao vivo" cuida de lance/prazo/status).
+		if (payload.containsKey("lotNumber")) {
+			item.setLotNumber(text(payload.get("lotNumber")));
 		}
-		if (item.getCurrentBidValue() == null) {
-			item.setCurrentBidValue(initialBid);
+		if (payload.containsKey("lotType")) {
+			item.setLotType(text(payload.get("lotType")));
 		}
-		item.setFipeValue(parseDecimal(payload.get("fipeValue")));
-		imageStorageService.syncLotImages(item, toUrlList(payload.get("imageUrls")));
+		if (payload.containsKey("vehicleDescription")) {
+			String vehicleDescription = text(payload.get("vehicleDescription"));
+			item.setVehicleDescription(vehicleDescription);
+			VehicleInfo vehicleInfo = vehicleParserService.parse(vehicleDescription);
+			item.setBrand(vehicleInfo.getBrand());
+			item.setModel(vehicleInfo.getModel());
+			item.setVehicleYear(vehicleInfo.getYear());
+		}
+		if (payload.containsKey("currentBidValue")) {
+			item.setCurrentBidValue(parseDecimal(payload.get("currentBidValue")));
+		}
+		// Piso (lance inicial): mantem sempre o MENOR valor ja visto (nunca sobe), mesmo que a fonte
+		// passe a mostrar o lance atual depois que abrem os lances.
+		if (payload.containsKey("minimumBidValue")) {
+			BigDecimal floor = parseDecimal(payload.get("minimumBidValue"));
+			if (floor != null && floor.signum() > 0
+					&& (item.getMinimumBidValue() == null || floor.compareTo(item.getMinimumBidValue()) < 0)) {
+				item.setMinimumBidValue(floor);
+			}
+		}
+		if (payload.containsKey("lotClosingDate")) {
+			item.setLotClosingDate(parseDateTime(payload.get("lotClosingDate")));
+		}
+		if (payload.containsKey("lotStatus")) {
+			item.setLotStatus(text(payload.get("lotStatus")));
+		}
+		if (payload.containsKey("fipeValue")) {
+			item.setFipeValue(parseDecimal(payload.get("fipeValue")));
+		}
+		if (payload.containsKey("imageUrls")) {
+			imageStorageService.syncLotImages(item, toUrlList(payload.get("imageUrls")));
+		}
 
 		auctionItemRepository.save(item);
 		return isNew ? SendResult.created() : SendResult.updated();

@@ -1,11 +1,17 @@
 package com.br.auction.controller;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -13,10 +19,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.br.auction.enums.AuctionProvider;
+import com.br.auction.models.AuctionItem;
+import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.response.AuctionJsonResponse;
 import com.br.auction.response.AuctionListJsonResponse;
 import com.br.auction.response.LotResponse;
 import com.br.auction.service.AuctionDetranService;
+import com.br.auction.service.AuctionDetranService.LotLiveData;
 import com.br.auction.service.AuctionSourceFilter;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,12 +43,20 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 public class ProviderFeedController {
 
 	private final AuctionDetranService detranService;
+	private final AuctionItemRepository auctionItemRepository;
 	private final int maxAuctionsForLots;
+	private final int liveMaxPerRun;
+	private final long liveThrottleMs;
 
-	public ProviderFeedController(AuctionDetranService detranService,
-			@org.springframework.beans.factory.annotation.Value("${auction.feed.max-auctions:3}") int maxAuctionsForLots) {
+	public ProviderFeedController(AuctionDetranService detranService, AuctionItemRepository auctionItemRepository,
+			@Value("${auction.feed.max-auctions:3}") int maxAuctionsForLots,
+			@Value("${lot.live.max-per-run:300}") int liveMaxPerRun,
+			@Value("${lot.live.throttle-ms:200}") long liveThrottleMs) {
 		this.detranService = detranService;
+		this.auctionItemRepository = auctionItemRepository;
 		this.maxAuctionsForLots = maxAuctionsForLots;
+		this.liveMaxPerRun = liveMaxPerRun;
+		this.liveThrottleMs = liveThrottleMs;
 	}
 
 	@Operation(summary = "Leiloes reais do provedor (JSON paginado)")
@@ -90,6 +107,73 @@ public class ProviderFeedController {
 		int to = Math.min(allLots.size(), from + pageSize);
 		List<Map<String, Object>> items = from >= allLots.size() ? List.of() : allLots.subList(from, to);
 		return ResponseEntity.ok(page(items, to < allLots.size(), page, pageSize, "lots"));
+	}
+
+	@Operation(summary = "Dados AO VIVO dos lotes (lance real, prazo por lote e status)",
+			description = "Adapter do provedor: busca lote a lote no endpoint do cronometro. Prioriza lotes abertos "
+					+ "(sem prazo/novos primeiro, depois os que encerram antes), limitado por rodada. Paginado.")
+	@ApiResponse(responseCode = "200", description = "Pagina retornada")
+	@GetMapping("/lots-live")
+	public ResponseEntity<Map<String, Object>> lotsLive(
+			@RequestParam(required = false, defaultValue = "DETRAN_MG") String providerCode,
+			@RequestParam(defaultValue = "1") int page,
+			@RequestParam(defaultValue = "50") int pageSize) {
+		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
+
+		// Lotes abertos priorizados: sem prazo (novos) primeiro, depois os que encerram mais cedo.
+		List<AuctionItem> open = auctionItemRepository.findAll().stream()
+				.filter(ProviderFeedController::isOpen)
+				.sorted(Comparator.comparing(AuctionItem::getLotClosingDate,
+						Comparator.nullsFirst(Comparator.naturalOrder())))
+				.toList();
+
+		int cap = Math.min(open.size(), Math.max(0, liveMaxPerRun));
+		int from = Math.max(0, (page - 1) * pageSize);
+		int to = Math.min(cap, from + pageSize);
+
+		List<Map<String, Object>> lots = new ArrayList<>();
+		for (int i = from; i < to; i++) {
+			AuctionItem item = open.get(i);
+			Optional<LotLiveData> live = detranService.fetchLotLive(provider, item.getLotId());
+			if (live.isPresent()) {
+				lots.add(liveLotToMap(item, live.get()));
+			}
+			pace(liveThrottleMs);
+		}
+		return ResponseEntity.ok(page(lots, to < cap, page, pageSize, "lots"));
+	}
+
+	/** Lote aberto (aceita lance): status desconhecido ou diferente de encerrado (3/4). */
+	private static boolean isOpen(AuctionItem item) {
+		String status = item.getLotStatus();
+		return status == null || !(status.equals("3") || status.equals("4"));
+	}
+
+	private Map<String, Object> liveLotToMap(AuctionItem item, LotLiveData data) {
+		Map<String, Object> map = new LinkedHashMap<>();
+		map.put("auctionId", item.getAuction() == null ? null : item.getAuction().getDetranAuctionId());
+		map.put("lotId", item.getLotId());
+		// Lance ao vivo; sem lance (valor nulo), mostra o piso/inicial para a UI nao ficar zerada.
+		BigDecimal bid = data.getCurrentBid();
+		if (bid == null) {
+			bid = item.getMinimumBidValue() != null ? item.getMinimumBidValue() : item.getCurrentBidValue();
+		}
+		map.put("currentBidValue", bid == null ? null : bid.toPlainString());
+		LocalDateTime closing = data.closingDateFrom(LocalDateTime.now());
+		map.put("closingDate", closing == null ? null : closing.toString());
+		map.put("lotStatus", data.getStatusLeilao());
+		return map;
+	}
+
+	private void pace(long throttleMs) {
+		if (throttleMs <= 0) {
+			return;
+		}
+		try {
+			Thread.sleep(Duration.ofMillis(throttleMs).toMillis());
+		} catch (InterruptedException ex) {
+			Thread.currentThread().interrupt();
+		}
 	}
 
 	private void collectLots(AuctionProvider provider, String auctionId, String auctionYear,
