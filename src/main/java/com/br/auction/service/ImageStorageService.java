@@ -91,7 +91,7 @@ public class ImageStorageService {
 			return;
 		}
 		item.clearImages();
-		String seed = null;
+		List<String> httpUrls = new ArrayList<>();
 		if (urls != null) {
 			for (String url : urls) {
 				if (url == null || url.isBlank()) {
@@ -103,41 +103,23 @@ public class ImageStorageService {
 					if (image != null) {
 						item.addImage(image);
 					}
-				} else if (seed == null) {
-					seed = trimmed;
+				} else {
+					httpUrls.add(trimmed);
 				}
 			}
 		}
 
-		if (seed != null) {
-			java.util.regex.Matcher matcher = SEQUENTIAL_IMAGE.matcher(seed);
-			if (matcher.matches()) {
-				String prefix = matcher.group(1);
-				int start = Integer.parseInt(matcher.group(2));
-				String extension = matcher.group(3);
-				// O provedor responde 200 com uma imagem placeholder fixa para indices inexistentes
-				// (em vez de 404). Descobrimos a assinatura desse placeholder sondando um indice bem
-				// alto e paramos a sequencia quando a foto baixada for igual a ele (ou repetida).
-				AuctionItemImage placeholder = download(prefix + (start + 200) + extension);
-				String placeholderData = placeholder == null ? null : placeholder.getData();
-				java.util.Set<String> seenData = new java.util.HashSet<>();
-				for (int index = start; index < start + MAX_IMAGES_PER_LOT; index++) {
-					AuctionItemImage image = download(prefix + index + extension);
-					if (image == null) {
-						break;
-					}
-					String data = image.getData();
-					if (placeholderData != null && placeholderData.equals(data)) {
-						break; // chegou no placeholder de "sem imagem"
-					}
-					if (data != null && !seenData.add(data)) {
-						break; // imagem repetida indica fim da galeria real
-					}
-					item.addImage(image);
+		if (httpUrls.size() == 1) {
+			// Provedor entregou UMA url semente (ex.: DETRAN-MG): descobre a galeria pelo indice sequencial.
+			seedSequentialGallery(item, httpUrls.get(0));
+		} else if (!httpUrls.isEmpty()) {
+			// Provedor ja entregou a lista de fotos (ex.: LEILO/MC): baixa e persiste todas, sem heuristica.
+			for (String url : httpUrls) {
+				if (item.getImages().size() >= MAX_IMAGES_PER_LOT) {
+					break;
 				}
-			} else {
-				AuctionItemImage image = download(seed);
-				item.addImage(image != null ? image : new AuctionItemImage(seed, null, null));
+				AuctionItemImage image = download(url);
+				item.addImage(image != null ? image : new AuctionItemImage(url, null, null));
 			}
 		}
 
@@ -145,6 +127,41 @@ public class ImageStorageService {
 		// na proxima coleta (evita travar com 0 fotos quando o provedor estava indisponivel).
 		if (!item.getImages().isEmpty()) {
 			item.setImagesSynced(Boolean.TRUE);
+		}
+	}
+
+	/**
+	 * Descobre a galeria a partir de UMA url semente cujo nome termina num indice sequencial (padrao
+	 * do DETRAN-MG). Incrementa o indice baixando cada foto ate bater no placeholder de "sem imagem"
+	 * (provedor responde 200 com imagem fixa em vez de 404) ou numa foto repetida. Sem o padrao, salva
+	 * apenas a foto semente.
+	 */
+	private void seedSequentialGallery(AuctionItem item, String seed) {
+		java.util.regex.Matcher matcher = SEQUENTIAL_IMAGE.matcher(seed);
+		if (!matcher.matches()) {
+			AuctionItemImage image = download(seed);
+			item.addImage(image != null ? image : new AuctionItemImage(seed, null, null));
+			return;
+		}
+		String prefix = matcher.group(1);
+		int start = Integer.parseInt(matcher.group(2));
+		String extension = matcher.group(3);
+		AuctionItemImage placeholder = download(prefix + (start + 200) + extension);
+		String placeholderData = placeholder == null ? null : placeholder.getData();
+		java.util.Set<String> seenData = new java.util.HashSet<>();
+		for (int index = start; index < start + MAX_IMAGES_PER_LOT; index++) {
+			AuctionItemImage image = download(prefix + index + extension);
+			if (image == null) {
+				break;
+			}
+			String data = image.getData();
+			if (placeholderData != null && placeholderData.equals(data)) {
+				break; // chegou no placeholder de "sem imagem"
+			}
+			if (data != null && !seenData.add(data)) {
+				break; // imagem repetida indica fim da galeria real
+			}
+			item.addImage(image);
 		}
 	}
 
