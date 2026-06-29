@@ -19,7 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import com.br.auction.models.CityCentroid;
 import com.br.auction.models.CityGeocode;
+import com.br.auction.repository.CityCentroidRepository;
 import com.br.auction.repository.CityGeocodeRepository;
 
 /**
@@ -39,15 +41,17 @@ public class GeocodingService {
 	private static final Pattern UF_SUFFIX = Pattern.compile("^(.*\\S)\\s*[-/]\\s*([A-Za-z]{2})$");
 
 	private final CityGeocodeRepository repository;
+	private final CityCentroidRepository centroidRepository;
 	private final String nominatimUrl;
 	private final String userAgent;
 	private final RestClient restClient;
 	private final Queue<String> pending = new ConcurrentLinkedQueue<>();
 
-	public GeocodingService(CityGeocodeRepository repository,
+	public GeocodingService(CityGeocodeRepository repository, CityCentroidRepository centroidRepository,
 			@Value("${auction.distance.nominatim-url:https://nominatim.openstreetmap.org/search}") String nominatimUrl,
 			@Value("${auction.distance.user-agent:auction-app/1.0 (leilao backend)}") String userAgent) {
 		this.repository = repository;
+		this.centroidRepository = centroidRepository;
 		this.nominatimUrl = nominatimUrl;
 		this.userAgent = userAgent;
 		this.restClient = RestClient.builder().build();
@@ -108,7 +112,11 @@ public class GeocodingService {
 				.orElseGet(CityGeocode::new);
 		geocode.setCity(city);
 		geocode.setState(state);
-		double[] coords = query(city, state);
+		// Offline-first: tenta a base de centroides do IBGE; so cai no Nominatim se nao houver match.
+		double[] coords = lookupCentroid(city, state);
+		if (coords == null) {
+			coords = query(city, state);
+		}
 		if (coords != null) {
 			geocode.setLatitude(coords[0]);
 			geocode.setLongitude(coords[1]);
@@ -166,6 +174,19 @@ public class GeocodingService {
 	 * sendo a cidade/estado originais — so a consulta ao Nominatim e normalizada). Devolve
 	 * {@code [cidade, estado]}.
 	 */
+	/** Busca o centroide do municipio na base offline do IBGE (fonte primaria), normalizando nome/UF. */
+	private double[] lookupCentroid(String city, String state) {
+		String[] cityState = cleanCityState(city, state);
+		if (cityState[0].isBlank() || cityState[1].isBlank()) {
+			return null;
+		}
+		return centroidRepository
+				.findFirstByNormalizedNameAndUf(CityCentroid.normalize(cityState[0]),
+						cityState[1].toUpperCase(Locale.ROOT))
+				.map(centroid -> new double[] { centroid.getLatitude(), centroid.getLongitude() })
+				.orElse(null);
+	}
+
 	static String[] cleanCityState(String city, String state) {
 		String cleanedCity = city == null ? "" : city.trim();
 		String cleanedState = state == null ? "" : state.trim();
