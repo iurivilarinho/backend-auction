@@ -107,8 +107,10 @@ public class ProviderFeedService {
 	public LotLiveFeedPageResponse lotsLive(String providerCode, int page, int pageSize) {
 		AuctionProvider provider = AuctionProvider.fromCodeOrDefault(providerCode);
 
+		// Apenas itens DESTE provedor: o feed ao-vivo bate no cronometro do provedor (DETRAN), entao
+		// itens de outro provedor (ex.: LEILO) nao tem leilao pai correspondente e quebrariam o sink.
 		// Lotes abertos priorizados: sem prazo (novos) primeiro, depois os que encerram mais cedo.
-		List<AuctionItem> open = auctionItemRepository.findAll().stream()
+		List<AuctionItem> open = auctionItemRepository.findByAuctionProviderCode(provider.getCode()).stream()
 				.filter(ProviderFeedService::isOpen)
 				.sorted(Comparator.comparing(AuctionItem::getLotClosingDate,
 						Comparator.nullsFirst(Comparator.naturalOrder())))
