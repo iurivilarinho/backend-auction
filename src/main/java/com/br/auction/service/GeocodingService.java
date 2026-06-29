@@ -5,7 +5,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,6 +31,12 @@ import com.br.auction.repository.CityGeocodeRepository;
 public class GeocodingService {
 
 	private static final Logger LOG = LoggerFactory.getLogger(GeocodingService.class);
+
+	/** Unidades da federacao (UF) validas, para reconhecer o sufixo de estado no nome da cidade. */
+	private static final Set<String> BR_UFS = Set.of("AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT",
+			"MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO");
+	/** Captura o sufixo de UF grudado no nome da cidade: "Goiania - GO", "Fortaleza/CE", etc. */
+	private static final Pattern UF_SUFFIX = Pattern.compile("^(.*\\S)\\s*[-/]\\s*([A-Za-z]{2})$");
 
 	private final CityGeocodeRepository repository;
 	private final String nominatimUrl;
@@ -113,12 +122,16 @@ public class GeocodingService {
 
 	@SuppressWarnings("unchecked")
 	private double[] query(String city, String state) {
+		// Alguns provedores (ex.: LEILO) gravam a cidade com a UF grudada ("GOIÂNIA - GO") e um
+		// stateCode generico do provedor ("GO" para todas). Normaliza antes de consultar o Nominatim,
+		// usando a UF real do sufixo quando houver — senao a cidade nao e encontrada.
+		String[] cityState = cleanCityState(city, state);
 		URI uri = UriComponentsBuilder.fromUriString(nominatimUrl)
 				.queryParam("format", "json")
 				.queryParam("limit", 1)
 				.queryParam("country", "Brasil")
-				.queryParam("state", state)
-				.queryParam("city", city)
+				.queryParam("state", cityState[1])
+				.queryParam("city", cityState[0])
 				.build()
 				.toUri();
 		Map<String, Object>[] results = restClient.get()
@@ -145,5 +158,25 @@ public class GeocodingService {
 
 	private String key(String city, String state) {
 		return city.trim().toLowerCase(Locale.ROOT) + "|" + state.trim().toUpperCase(Locale.ROOT);
+	}
+
+	/**
+	 * Normaliza cidade+estado para a consulta de geocodificacao. Quando o nome traz a UF real no
+	 * sufixo ("FORTALEZA - CE"), usa-a como estado e remove o sufixo do nome (a chave de cache segue
+	 * sendo a cidade/estado originais — so a consulta ao Nominatim e normalizada). Devolve
+	 * {@code [cidade, estado]}.
+	 */
+	static String[] cleanCityState(String city, String state) {
+		String cleanedCity = city == null ? "" : city.trim();
+		String cleanedState = state == null ? "" : state.trim();
+		Matcher matcher = UF_SUFFIX.matcher(cleanedCity);
+		if (matcher.matches()) {
+			String uf = matcher.group(2).toUpperCase(Locale.ROOT);
+			if (BR_UFS.contains(uf)) {
+				cleanedCity = matcher.group(1).trim();
+				cleanedState = uf;
+			}
+		}
+		return new String[] { cleanedCity, cleanedState };
 	}
 }
