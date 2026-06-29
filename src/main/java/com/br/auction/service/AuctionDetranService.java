@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.br.auction.enums.AuctionProvider;
+import com.br.auction.filter.AuctionSourceFilter;
 import com.br.auction.response.AuctionJsonResponse;
 import com.br.auction.response.AuctionListJsonResponse;
 import com.br.auction.response.LotResponse;

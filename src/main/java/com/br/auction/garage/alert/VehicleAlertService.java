@@ -1,5 +1,6 @@
 package com.br.auction.garage.alert;
 
+import java.util.Arrays;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
@@ -11,6 +12,7 @@ import com.br.auction.garage.repository.AlertNotificationRepository;
 import com.br.auction.garage.repository.VehicleAlertRepository;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
+import com.br.auction.response.EnumOptionResponse;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -31,6 +33,13 @@ public class VehicleAlertService {
 	@Transactional(readOnly = true)
 	public List<VehicleAlert> findAll() {
 		return repository.findAllByOrderByCreatedAtDesc();
+	}
+
+	/** Tipos de alerta disponiveis para montar o seletor no frontend. */
+	public List<EnumOptionResponse> types() {
+		return Arrays.stream(AlertType.values())
+				.map(type -> new EnumOptionResponse(type.name(), type.getDescription()))
+				.toList();
 	}
 
 	@Transactional(readOnly = true)

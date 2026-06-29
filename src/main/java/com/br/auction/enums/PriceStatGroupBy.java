@@ -1,4 +1,4 @@
-package com.br.auction.service;
+package com.br.auction.enums;
 
 /**
  * Granularidade do agrupamento das estatisticas de preco de arremate.

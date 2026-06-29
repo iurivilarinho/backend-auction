@@ -22,10 +22,6 @@ import org.springframework.web.server.ResponseStatusException;
 import com.br.auction.analytics.assistant.AiCompletionPort;
 import com.br.auction.analytics.assistant.AiSettingsService;
 import com.br.auction.analytics.assistant.AiUnavailableException;
-import com.br.auction.analytics.nlquery.NlQueryDtos.ChartSpec;
-import com.br.auction.analytics.nlquery.NlQueryDtos.ColumnMeta;
-import com.br.auction.analytics.nlquery.NlQueryDtos.NlQueryResponse;
-import com.br.auction.analytics.nlquery.NlQueryDtos.QueryResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 

@@ -1,5 +1,8 @@
-package com.br.auction.service;
+package com.br.auction.filter;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(description = "Filtros aplicados na coleta de leilões direto na fonte (provedor)")
 public class AuctionSourceFilter {
 
 	private String auctionNumber;

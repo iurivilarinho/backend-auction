@@ -4,10 +4,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 
 import org.jsoup.Connection;
@@ -19,6 +17,8 @@ import org.springframework.stereotype.Service;
 
 import com.br.auction.enums.AuctionProvider;
 import com.br.auction.response.AuctionListJsonResponse;
+import com.br.auction.response.LotFeedPageResponse;
+import com.br.auction.response.LotFeedResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -64,10 +64,6 @@ public class LeiloService {
 		this.orgaosOnly = orgaosOnly;
 	}
 
-	/** Lotes ja filtrados/mapeados para o feed + se ha mais paginas na fonte. */
-	public record LotsPage(List<Map<String, Object>> lots, boolean hasNext) {
-	}
-
 	/** Leiloes (lista-site) mapeados para o formato de resposta do feed. */
 	public List<AuctionListJsonResponse> fetchAuctions(AuctionProvider provider) {
 		List<AuctionListJsonResponse> out = new ArrayList<>();
@@ -90,50 +86,47 @@ public class LeiloService {
 	}
 
 	/** Uma pagina de lotes de veiculo (e de orgao, se a flag estiver ligada). */
-	public LotsPage fetchLotsPage(AuctionProvider provider, int page, int pageSize) {
+	public LotFeedPageResponse fetchLotsPage(AuctionProvider provider, int page, int pageSize) {
 		int from = Math.max(0, (page - 1) * pageSize);
 		String body = "{\"from\":" + from + ",\"size\":" + pageSize + ",\"requisicoesBusca\":[{}],\"listaOrdenacao\":[]}";
 		JsonNode arr = postJson(provider.getBaseUrl() + "/v1/lote/busca-elastic", body);
-		List<Map<String, Object>> lots = new ArrayList<>();
+		List<LotFeedResponse> lots = new ArrayList<>();
 		if (arr == null || !arr.isArray()) {
-			return new LotsPage(lots, false);
+			return new LotFeedPageResponse(lots, page, pageSize, false);
 		}
 		int rawCount = arr.size();
 		for (JsonNode lot : arr) {
 			if (!isVehicle(lot) || (orgaosOnly && !isOrgao(lot))) {
 				continue;
 			}
-			lots.add(toLotMap(lot));
+			lots.add(toLot(lot));
 		}
 		// Ha mais paginas se a fonte devolveu a pagina cheia (o filtro reduz o resultado, mas a fonte continua).
-		return new LotsPage(lots, rawCount >= pageSize);
+		return new LotFeedPageResponse(lots, page, pageSize, rawCount >= pageSize);
 	}
 
-	private Map<String, Object> toLotMap(JsonNode lot) {
+	private LotFeedResponse toLot(JsonNode lot) {
 		JsonNode valor = lot.path("valor");
 		JsonNode veiculo = lot.path("veiculo");
 		Long minimo = asLong(valor.get("minimo"));
 		Long lance = asLong(valor.path("lance").get("valor"));
-		Map<String, Object> m = new LinkedHashMap<>();
 		// No objeto do lote o leilao vem com "id" (UUID), que corresponde ao "uid" da lista-site.
-		m.put("auctionId", lot.path("leilao").path("id").asText(null));
-		m.put("lotId", text(lot, "lelId"));
-		m.put("lotNumber", lot.hasNonNull("numero") ? "Lote " + lot.get("numero").asText() : null);
+		String auctionId = lot.path("leilao").path("id").asText(null);
+		String lotId = text(lot, "lelId");
+		String lotNumber = lot.hasNonNull("numero") ? "Lote " + lot.get("numero").asText() : null;
 		// Tipo do lote no padrao do sistema (LotType: CONSERVADO/SUCATA). A "categoria" da Leilo
 		// (Carros/Motos) nao e o tipo do sistema; classificamos aqui no adapter. Os veiculos da Leilo
 		// sao retomadas de banco/seguradora (carros em uso) = CONSERVADO; SUCATA so quando a descricao
 		// indica sinistro/perda total/monta.
-		m.put("lotType", classifyCondition(lot));
-		m.put("vehicleDescription", firstNonBlank(text(lot, "nome"),
-				(veiculo.path("infocarMarca").asText("") + " " + veiculo.path("infocarModelo").asText("")).trim()));
+		String lotType = classifyCondition(lot);
+		String vehicleDescription = firstNonBlank(text(lot, "nome"),
+				(veiculo.path("infocarMarca").asText("") + " " + veiculo.path("infocarModelo").asText("")).trim());
 		// Ano vem estruturado da fonte (a descricao nem sempre traz ano); prioriza o ano-modelo.
-		m.put("vehicleYear", vehicleYear(veiculo));
-		m.put("currentBidValue", lance != null ? lance : minimo);
-		m.put("minimumBidValue", minimo);
-		m.put("closingDate", brDate(text(lot, "dataFim")));
-		m.put("lotStatus", text(lot, "situacao"));
-		m.put("imageUrls", imageUrls(lot.path("fotosUrls")));
-		return m;
+		String vehicleYear = vehicleYear(veiculo);
+		Long current = lance != null ? lance : minimo;
+		return new LotFeedResponse(auctionId, lotId, lotNumber, lotType, vehicleDescription, vehicleYear,
+				toStr(current), toStr(minimo), brDate(text(lot, "dataFim")), text(lot, "situacao"),
+				imageUrls(lot.path("fotosUrls")));
 	}
 
 	/** Ano do veiculo a partir dos campos estruturados (ano-modelo; cai para ano-fabricacao). */
@@ -242,6 +235,11 @@ public class LeiloService {
 
 	private static Long asLong(JsonNode v) {
 		return v == null || v.isNull() ? null : v.asLong();
+	}
+
+	/** Valor monetario como texto (a fonte do feed e declarada como STRING; o sink converte). */
+	private static String toStr(Long value) {
+		return value == null ? null : Long.toString(value);
 	}
 
 	private static String firstNonBlank(String... values) {

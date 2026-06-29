@@ -1,4 +1,5 @@
 package com.br.auction.garage.repository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
@@ -7,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.br.auction.garage.enums.AcquisitionStatus;
 import com.br.auction.garage.models.Acquisition;
 
+@Repository
 public interface AcquisitionRepository extends JpaRepository<Acquisition, Long> {
 
 	List<Acquisition> findAllByOrderByCreatedAtDesc();

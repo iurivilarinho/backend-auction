@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.br.auction.enums.AuctionProvider;
+import com.br.auction.filter.AuctionSourceFilter;
 import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;

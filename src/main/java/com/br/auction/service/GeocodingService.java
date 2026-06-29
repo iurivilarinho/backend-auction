@@ -1,5 +1,6 @@
 package com.br.auction.service;
 
+import java.net.URI;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -112,7 +113,7 @@ public class GeocodingService {
 
 	@SuppressWarnings("unchecked")
 	private double[] query(String city, String state) {
-		var uri = UriComponentsBuilder.fromUriString(nominatimUrl)
+		URI uri = UriComponentsBuilder.fromUriString(nominatimUrl)
 				.queryParam("format", "json")
 				.queryParam("limit", 1)
 				.queryParam("country", "Brasil")

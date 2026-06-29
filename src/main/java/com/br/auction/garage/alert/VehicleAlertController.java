@@ -1,8 +1,6 @@
 package com.br.auction.garage.alert;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,8 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.br.auction.garage.enums.AlertType;
 import com.br.auction.garage.models.VehicleAlert;
+import com.br.auction.response.EnumOptionResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -50,11 +48,8 @@ public class VehicleAlertController {
 
 	@Operation(summary = "Listar tipos de alerta disponiveis")
 	@GetMapping("/types")
-	public ResponseEntity<List<Map<String, String>>> types() {
-		List<Map<String, String>> types = Arrays.stream(AlertType.values())
-				.map(type -> Map.of("value", type.name(), "label", type.getDescription()))
-				.toList();
-		return ResponseEntity.ok(types);
+	public ResponseEntity<List<EnumOptionResponse>> types() {
+		return ResponseEntity.ok(service.types());
 	}
 
 	@Operation(summary = "Avaliar os alertas agora (disparo manual)")

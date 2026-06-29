@@ -1,4 +1,5 @@
 package com.br.auction.repository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.br.auction.models.Auction;
 
+@Repository
 public interface AuctionRepository extends JpaRepository<Auction, Long>, JpaSpecificationExecutor<Auction> {
 
 	boolean existsByDetranAuctionId(String detranAuctionId);

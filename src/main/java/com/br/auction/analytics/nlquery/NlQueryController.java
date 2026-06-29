@@ -9,12 +9,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.br.auction.analytics.nlquery.NlQueryDtos.ExportRequest;
-import com.br.auction.analytics.nlquery.NlQueryDtos.HealthResponse;
-import com.br.auction.analytics.nlquery.NlQueryDtos.NlQueryRequest;
-import com.br.auction.analytics.nlquery.NlQueryDtos.NlQueryResponse;
-import com.br.auction.analytics.nlquery.NlQueryDtos.RunRequest;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,21 +27,21 @@ public class NlQueryController {
 
     @GetMapping("/health")
     @Operation(summary = "Indica se o provedor de IA esta acessivel agora.")
-    public HealthResponse health() {
-        return new HealthResponse(service.aiAvailable());
+    public ResponseEntity<NlQueryHealthResponse> health() {
+        return ResponseEntity.ok(new NlQueryHealthResponse(service.aiAvailable()));
     }
 
     @PostMapping("/ask")
     @Operation(summary = "Faz uma pergunta em linguagem natural e devolve dados + narrativa.")
     @ApiResponse(responseCode = "200", description = "Resultado da consulta assistida por IA.")
-    public NlQueryResponse ask(@RequestBody NlQueryRequest request) {
-        return service.ask(request.question(), request.previousSql());
+    public ResponseEntity<NlQueryResponse> ask(@RequestBody NlQueryRequest request) {
+        return ResponseEntity.ok(service.ask(request.question(), request.previousSql()));
     }
 
     @PostMapping("/run")
     @Operation(summary = "Reexecuta um HQL ja gerado (revalidado) para recarregar uma visao.")
-    public NlQueryResponse run(@RequestBody RunRequest request) {
-        return service.run(request.sql(), request.chart(), request.title(), request.limit());
+    public ResponseEntity<NlQueryResponse> run(@RequestBody RunRequest request) {
+        return ResponseEntity.ok(service.run(request.sql(), request.chart(), request.title(), request.limit()));
     }
 
     @PostMapping("/export")

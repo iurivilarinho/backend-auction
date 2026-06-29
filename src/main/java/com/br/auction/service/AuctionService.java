@@ -1,6 +1,7 @@
 package com.br.auction.service;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -12,12 +13,18 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.br.auction.enums.AuctionStatus;
-import com.br.auction.enums.LotType;
+import com.br.auction.enums.PriceStatGroupBy;
+import com.br.auction.filter.AuctionFilter;
+import com.br.auction.filter.AuctionItemFacetFilter;
+import com.br.auction.filter.AuctionItemFilter;
+import com.br.auction.filter.PriceStatFilter;
 import com.br.auction.models.Auction;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
 import com.br.auction.repository.AuctionRepository;
+import com.br.auction.response.AuctionItemFacetsResponse;
+import com.br.auction.response.AuctionItemResponse;
+import com.br.auction.response.AuctionListResponse;
 import com.br.auction.response.PriceStatResponse;
 
 import com.br.auction.specification.AuctionItemSpecification;
@@ -35,15 +42,71 @@ public class AuctionService {
 	private final AuctionItemRepository auctionItemRepository;
 	private final FipeService fipeService;
 	private final EditalService editalService;
+	private final DistanceService distanceService;
+	private final GeocodingService geocodingService;
 	private final EntityManager entityManager;
 
 	public AuctionService(AuctionRepository auctionRepository, AuctionItemRepository auctionItemRepository,
-			FipeService fipeService, EditalService editalService, EntityManager entityManager) {
+			FipeService fipeService, EditalService editalService, DistanceService distanceService,
+			GeocodingService geocodingService, EntityManager entityManager) {
 		this.auctionRepository = auctionRepository;
 		this.auctionItemRepository = auctionItemRepository;
 		this.fipeService = fipeService;
 		this.editalService = editalService;
+		this.distanceService = distanceService;
+		this.geocodingService = geocodingService;
 		this.entityManager = entityManager;
+	}
+
+	/**
+	 * Enfileira a geocodificacao das cidades distintas dos leiloes do escopo informado, garantindo
+	 * antes que exista uma configuracao de origem. Devolve a quantidade de cidades enfileiradas.
+	 */
+	@Transactional
+	public int warmupCities(Long auctionId, List<String> providerCodes, String stateCode) {
+		distanceService.getOrCreateSettings();
+		List<String[]> cities = distinctAuctionCities(auctionId, providerCodes, stateCode);
+		for (String[] cityState : cities) {
+			geocodingService.enqueue(cityState[0], cityState[1]);
+		}
+		return cities.size();
+	}
+
+	/**
+	 * Preenche a distancia de cada leilao a partir da origem configurada, calculando uma unica vez
+	 * por cidade distinta. Cidades ainda nao geocodificadas ficam com distancia nula e sao resolvidas
+	 * em segundo plano, sem bloquear a listagem.
+	 */
+	@Transactional(readOnly = true)
+	public void fillAuctionDistances(List<AuctionListResponse> auctions) {
+		Map<String, Double> distancesByCity = new HashMap<>();
+		for (AuctionListResponse auction : auctions) {
+			if (auction.getCity() == null || auction.getCity().isBlank()) {
+				continue;
+			}
+			String key = auction.getCity() + "|" + (auction.getStateCode() == null ? "" : auction.getStateCode());
+			auction.setDistanceKm(distancesByCity.computeIfAbsent(key,
+					k -> distanceService.distanceKm(auction.getCity(), auction.getStateCode())));
+		}
+	}
+
+	/**
+	 * Preenche a distancia de cada item de leilao a partir da origem configurada, reaproveitando o
+	 * calculo por cidade distinta do leilao associado.
+	 */
+	@Transactional(readOnly = true)
+	public void fillItemDistances(List<AuctionItemResponse> responses) {
+		Map<String, Double> distancesByCity = new HashMap<>();
+		for (AuctionItemResponse response : responses) {
+			AuctionListResponse auction = response.getAuction();
+			if (auction == null || auction.getCity() == null || auction.getCity().isBlank()) {
+				continue;
+			}
+			String city = auction.getCity();
+			String state = auction.getStateCode();
+			String key = city + "|" + (state == null ? "" : state);
+			response.setDistanceKm(distancesByCity.computeIfAbsent(key, k -> distanceService.distanceKm(city, state)));
+		}
 	}
 
 	/**
@@ -60,14 +123,13 @@ public class AuctionService {
 	}
 
 	@Transactional(readOnly = true)
-	public Page<Auction> findAll(List<AuctionStatus> status, String search, List<String> providerCodes, String stateCode,
-			Pageable page) {
-		// providerCodes/stateCode sao filtros opcionais: ausentes = todos os provedores/estados.
+	public Page<Auction> findAll(AuctionFilter filter, Pageable page) {
+		// providerCode/stateCode sao filtros opcionais: ausentes = todos os provedores/estados.
 		// Aceita varios provedores (multi-selecao); nao usa provedor padrao para nao esconder a lista.
-		return auctionRepository.findAll(AuctionSpecification.searchAllFields(search, entityManager)
-				.and(AuctionSpecification.statusEquals(status))
-				.and(AuctionSpecification.providerCodeIn(providerCodes))
-				.and(AuctionSpecification.stateCodeEquals(stateCode)), page);
+		return auctionRepository.findAll(AuctionSpecification.searchAllFields(filter.getSearch(), entityManager)
+				.and(AuctionSpecification.statusEquals(filter.getStatus()))
+				.and(AuctionSpecification.providerCodeIn(filter.getProviderCode()))
+				.and(AuctionSpecification.stateCodeEquals(filter.getStateCode())), page);
 	}
 
 	@Transactional(readOnly = true)
@@ -77,21 +139,21 @@ public class AuctionService {
 	}
 
 	@Transactional(readOnly = true)
-	public Page<AuctionItem> findAllItems(AuctionItemQuery query, Pageable page) {
+	public Page<AuctionItem> findAllItems(AuctionItemFilter filter, Pageable page) {
 		// providerCode/stateCode sao filtros opcionais (ausentes = todos). Sem provedor padrao: quando a
 		// tela abre os itens por auctionId (sem provider), o proprio leilao ja delimita provedor/estado.
-		return auctionItemRepository.findAll(AuctionItemSpecification.searchAllFields(query.search(), entityManager)
-				.and(AuctionItemSpecification.auctionIdEquals(query.auctionId()))
-				.and(AuctionItemSpecification.typeEquals(query.type()))
-				.and(AuctionItemSpecification.auctionStatusEquals(query.auctionStatus()))
-				.and(AuctionItemSpecification.brandIn(query.brands()))
-				.and(AuctionItemSpecification.yearIn(query.years()))
-				.and(AuctionItemSpecification.modelContains(query.model()))
-				.and(AuctionItemSpecification.bidBetween(query.minBid(), query.maxBid()))
-				.and(AuctionItemSpecification.fipeBetween(query.minFipe(), query.maxFipe()))
-				.and(AuctionItemSpecification.closedEquals(query.closed()))
-				.and(AuctionItemSpecification.providerCodeIn(query.providerCodes()))
-				.and(AuctionItemSpecification.stateCodeEquals(query.stateCode())), page);
+		return auctionItemRepository.findAll(AuctionItemSpecification.searchAllFields(filter.getSearch(), entityManager)
+				.and(AuctionItemSpecification.auctionIdEquals(filter.getAuctionId()))
+				.and(AuctionItemSpecification.typeEquals(filter.getType()))
+				.and(AuctionItemSpecification.auctionStatusEquals(filter.getAuctionStatus()))
+				.and(AuctionItemSpecification.brandIn(filter.getBrand()))
+				.and(AuctionItemSpecification.yearIn(filter.getYear()))
+				.and(AuctionItemSpecification.modelContains(filter.getModel()))
+				.and(AuctionItemSpecification.bidBetween(filter.getMinBid(), filter.getMaxBid()))
+				.and(AuctionItemSpecification.fipeBetween(filter.getMinFipe(), filter.getMaxFipe()))
+				.and(AuctionItemSpecification.closedEquals(filter.getClosed()))
+				.and(AuctionItemSpecification.providerCodeIn(filter.getProviderCode()))
+				.and(AuctionItemSpecification.stateCodeEquals(filter.getStateCode())), page);
 	}
 
 	@Transactional(readOnly = true)
@@ -106,6 +168,14 @@ public class AuctionService {
 		List<String> codes = normalizeList(providerCodes);
 		return auctionItemRepository.findDistinctYears(auctionId, codes.isEmpty(), orPlaceholder(codes),
 				blankToNull(stateCode));
+	}
+
+	/** Marcas e anos distintos disponiveis para montar os filtros especializados, dado o escopo. */
+	@Transactional(readOnly = true)
+	public AuctionItemFacetsResponse findItemFacets(AuctionItemFacetFilter filter) {
+		List<String> brands = distinctBrands(filter.getAuctionId(), filter.getProviderCode(), filter.getStateCode());
+		List<String> years = distinctYears(filter.getAuctionId(), filter.getProviderCode(), filter.getStateCode());
+		return new AuctionItemFacetsResponse(brands, years);
 	}
 
 	/** Calcula e persiste o valor FIPE de um item sob demanda (usa cache de 30 dias). */
@@ -151,13 +221,13 @@ public class AuctionService {
 	 * {@code currentBidValue} (ultimo lance), que no estado finalizado representa o valor final.
 	 */
 	@Transactional(readOnly = true)
-	public List<PriceStatResponse> priceStats(PriceStatGroupBy groupBy, List<String> brands,
-			List<String> providerCodes, String stateCode) {
-		// providerCodes/stateCode opcionais (ausentes = todos). Aceita varios provedores (multi-selecao).
+	public List<PriceStatResponse> priceStats(PriceStatFilter filter) {
+		// providerCode/stateCode opcionais (ausentes = todos). Aceita varios provedores (multi-selecao).
+		PriceStatGroupBy groupBy = filter.getGroupBy();
 		List<AuctionItem> items = auctionItemRepository.findAll(AuctionItemSpecification.closedEquals(true)
-				.and(AuctionItemSpecification.brandIn(brands))
-				.and(AuctionItemSpecification.providerCodeIn(providerCodes))
-				.and(AuctionItemSpecification.stateCodeEquals(stateCode)));
+				.and(AuctionItemSpecification.brandIn(filter.getBrand()))
+				.and(AuctionItemSpecification.providerCodeIn(filter.getProviderCode()))
+				.and(AuctionItemSpecification.stateCodeEquals(filter.getStateCode())));
 
 		Map<String, PriceAccumulator> groups = new java.util.LinkedHashMap<>();
 		for (AuctionItem item : items) {

@@ -1,4 +1,5 @@
 package com.br.auction.integration.execution;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -9,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.br.auction.integration.enums.RunStatus;
 
+@Repository
 public interface IntegrationRunRepository extends JpaRepository<IntegrationRun, Long> {
 
 	Page<IntegrationRun> findByIntegrationId(Long integrationId, Pageable pageable);

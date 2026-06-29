@@ -7,8 +7,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import com.br.auction.analytics.savedview.BiSavedViewDtos.SavedViewRequest;
-
 /** Regras das visoes salvas do B.I. (app single-user: visoes globais, sem dono). */
 @Service
 public class BiSavedViewService {

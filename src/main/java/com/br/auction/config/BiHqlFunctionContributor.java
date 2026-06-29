@@ -1,7 +1,11 @@
 package com.br.auction.config;
 
+import java.math.BigDecimal;
+
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.FunctionContributor;
+import org.hibernate.query.sqm.function.SqmFunctionRegistry;
+import org.hibernate.type.BasicType;
 import org.hibernate.type.StandardBasicTypes;
 
 /**
@@ -23,10 +27,10 @@ public class BiHqlFunctionContributor implements FunctionContributor {
 
     @Override
     public void contributeFunctions(FunctionContributions functionContributions) {
-        var registry = functionContributions.getFunctionRegistry();
-        var doubleType = functionContributions.getTypeConfiguration()
+        SqmFunctionRegistry registry = functionContributions.getFunctionRegistry();
+        BasicType<Double> doubleType = functionContributions.getTypeConfiguration()
                 .getBasicTypeRegistry().resolve(StandardBasicTypes.DOUBLE);
-        var bigDecimalType = functionContributions.getTypeConfiguration()
+        BasicType<BigDecimal> bigDecimalType = functionContributions.getTypeConfiguration()
                 .getBasicTypeRegistry().resolve(StandardBasicTypes.BIG_DECIMAL);
 
         registry.registerPattern(

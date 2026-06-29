@@ -1,5 +1,8 @@
 package com.br.auction.analytics.assistant;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,18 +53,32 @@ public class AiSettingsService {
         return global();
     }
 
+    /** Configuração atual efetiva, no formato de resposta (sem expor o token). */
+    @Transactional(readOnly = true)
+    public AiSettingsResponse currentSettings() {
+        return new AiSettingsResponse(global());
+    }
+
+    /** Provedores de IA disponíveis para seleção na tela. */
+    public List<AiProviderOptionResponse> providerOptions() {
+        return Arrays.stream(AiProvider.values())
+                .map(provider -> new AiProviderOptionResponse(provider.name(), provider.getLabel(),
+                        provider.isRequiresApiKey()))
+                .toList();
+    }
+
     @Transactional
-    public AiSettings saveGlobal(AiSettingsForm form) {
+    public AiSettings saveGlobal(AiSettingsRequest request) {
         AiSettings settings = repository.findById(AiSettings.SINGLETON_ID).orElseGet(AiSettings::new);
         settings.setId(AiSettings.SINGLETON_ID);
-        settings.setProvider(form.provider());
-        settings.setBaseUrl(trimToNull(form.baseUrl()));
-        settings.setModel(trimToNull(form.model()));
-        settings.setClaudeCommand(trimToNull(form.claudeCommand()));
-        settings.setTimeoutSeconds(form.timeoutSeconds() > 0 ? form.timeoutSeconds() : 120);
-        settings.setBypassGuard(form.bypassGuard());
-        if (form.apiKey() != null && !form.apiKey().isBlank()) {
-            settings.setApiKey(form.apiKey().trim());
+        settings.setProvider(request.provider() != null ? request.provider() : AiProvider.CLAUDE_CLI);
+        settings.setBaseUrl(trimToNull(request.baseUrl()));
+        settings.setModel(trimToNull(request.model()));
+        settings.setClaudeCommand(trimToNull(request.claudeCommand()));
+        settings.setTimeoutSeconds(resolveTimeout(request.timeoutSeconds()));
+        settings.setBypassGuard(Boolean.TRUE.equals(request.bypassGuard()));
+        if (request.apiKey() != null && !request.apiKey().isBlank()) {
+            settings.setApiKey(request.apiKey().trim());
         }
         return repository.save(settings);
     }
@@ -71,15 +88,15 @@ public class AiSettingsService {
      * ja salvo quando o campo do token vem em branco (a tela nunca recebe o token).
      */
     @Transactional(readOnly = true)
-    public AiSettings mergeForTest(AiSettingsForm form) {
+    public AiSettings mergeForTest(AiSettingsRequest request) {
         AiSettings effective = new AiSettings();
-        effective.setProvider(form.provider());
-        effective.setBaseUrl(trimToNull(form.baseUrl()));
-        effective.setModel(trimToNull(form.model()));
-        effective.setClaudeCommand(trimToNull(form.claudeCommand()));
-        effective.setTimeoutSeconds(form.timeoutSeconds() > 0 ? form.timeoutSeconds() : 120);
-        if (form.apiKey() != null && !form.apiKey().isBlank()) {
-            effective.setApiKey(form.apiKey().trim());
+        effective.setProvider(request.provider() != null ? request.provider() : AiProvider.CLAUDE_CLI);
+        effective.setBaseUrl(trimToNull(request.baseUrl()));
+        effective.setModel(trimToNull(request.model()));
+        effective.setClaudeCommand(trimToNull(request.claudeCommand()));
+        effective.setTimeoutSeconds(resolveTimeout(request.timeoutSeconds()));
+        if (request.apiKey() != null && !request.apiKey().isBlank()) {
+            effective.setApiKey(request.apiKey().trim());
         } else {
             AiSettings saved = findGlobalOrNull();
             if (saved != null) {
@@ -121,8 +138,7 @@ public class AiSettingsService {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    /** Payload da configuracao global (inclui bypass). */
-    public record AiSettingsForm(AiProvider provider, String apiKey, String baseUrl, String model,
-            String claudeCommand, int timeoutSeconds, boolean bypassGuard) {
+    private int resolveTimeout(Integer timeoutSeconds) {
+        return timeoutSeconds != null && timeoutSeconds > 0 ? timeoutSeconds : 120;
     }
 }

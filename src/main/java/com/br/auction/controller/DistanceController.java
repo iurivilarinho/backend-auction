@@ -11,10 +11,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.br.auction.request.DistanceOriginPointRequest;
+import com.br.auction.request.DistanceSettingRequest;
 import com.br.auction.response.DistanceSettingResponse;
+import com.br.auction.response.GeocodingWarmupResponse;
 import com.br.auction.service.AuctionService;
 import com.br.auction.service.DistanceService;
-import com.br.auction.service.GeocodingService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -27,13 +29,10 @@ import jakarta.validation.Valid;
 public class DistanceController {
 
 	private final DistanceService distanceService;
-	private final GeocodingService geocodingService;
 	private final AuctionService auctionService;
 
-	public DistanceController(DistanceService distanceService, GeocodingService geocodingService,
-			AuctionService auctionService) {
+	public DistanceController(DistanceService distanceService, AuctionService auctionService) {
 		this.distanceService = distanceService;
-		this.geocodingService = geocodingService;
 		this.auctionService = auctionService;
 	}
 
@@ -66,18 +65,12 @@ public class DistanceController {
 	@Operation(summary = "Aquecer geocodificacao das cidades dos leiloes", description = "Enfileira (ou resolve) as coordenadas das cidades dos leiloes do escopo informado para que as distancias apareçam nas listagens.")
 	@ApiResponse(responseCode = "202", description = "Aquecimento iniciado")
 	@PostMapping("/warmup")
-	public ResponseEntity<java.util.Map<String, Object>> warmup(
+	public ResponseEntity<GeocodingWarmupResponse> warmup(
 			@RequestParam(required = false) Long auctionId,
 			@RequestParam(required = false) List<String> providerCode,
 			@RequestParam(required = false) String stateCode) {
-		distanceService.getOrCreateSettings();
-		List<String[]> cities = auctionService.distinctAuctionCities(auctionId, providerCode, stateCode);
-		for (String[] cityState : cities) {
-			geocodingService.enqueue(cityState[0], cityState[1]);
-		}
-		java.util.Map<String, Object> body = new java.util.LinkedHashMap<>();
-		body.put("queued", cities.size());
-		body.put("message", "Geocodificacao das cidades enfileirada. As distancias aparecerao em instantes.");
-		return ResponseEntity.accepted().body(body);
+		int queued = auctionService.warmupCities(auctionId, providerCode, stateCode);
+		return ResponseEntity.accepted().body(new GeocodingWarmupResponse(queued,
+				"Geocodificacao das cidades enfileirada. As distancias aparecerao em instantes."));
 	}
 }

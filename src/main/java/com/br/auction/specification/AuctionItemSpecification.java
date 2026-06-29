@@ -13,6 +13,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Path;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.metamodel.Attribute;
 import jakarta.persistence.metamodel.Attribute.PersistentAttributeType;
@@ -37,7 +38,7 @@ public class AuctionItemSpecification {
 		}
 		String finalizedDescription = AuctionStatus.FINALIZADO.getDescription();
 		return (root, query, criteriaBuilder) -> {
-			var statusPath = root.get("auction").get("status");
+			Path<?> statusPath = root.get("auction").get("status");
 			return closed ? criteriaBuilder.equal(statusPath, finalizedDescription)
 					: criteriaBuilder.or(criteriaBuilder.notEqual(statusPath, finalizedDescription),
 							criteriaBuilder.isNull(statusPath));

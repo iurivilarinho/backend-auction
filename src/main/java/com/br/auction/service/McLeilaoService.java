@@ -5,10 +5,8 @@ import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
@@ -19,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import com.br.auction.enums.AuctionProvider;
 import com.br.auction.response.AuctionListJsonResponse;
+import com.br.auction.response.LotFeedResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -82,8 +81,8 @@ public class McLeilaoService {
 	}
 
 	/** Lotes de veiculo (com detalhe) de todos os leiloes; achatados para o feed paginar em memoria. */
-	public List<Map<String, Object>> fetchVehicleLots(AuctionProvider provider) {
-		List<Map<String, Object>> lots = new ArrayList<>();
+	public List<LotFeedResponse> fetchVehicleLots(AuctionProvider provider) {
+		List<LotFeedResponse> lots = new ArrayList<>();
 		JsonNode aucs = listarLeiloes(provider);
 		if (aucs == null || !aucs.isArray()) {
 			return lots;
@@ -109,26 +108,24 @@ public class McLeilaoService {
 				if (orgaosOnly && !isOrgao(lot)) {
 					continue;
 				}
-				lots.add(toLotMap(auctionId, lot));
+				lots.add(toLot(auctionId, lot));
 			}
 		}
 		return lots;
 	}
 
-	private Map<String, Object> toLotMap(String auctionId, JsonNode lot) {
+	private LotFeedResponse toLot(String auctionId, JsonNode lot) {
 		Long lance = asLong(lot.get("valorLance"));
-		Map<String, Object> m = new LinkedHashMap<>();
-		m.put("auctionId", auctionId);
-		m.put("lotId", text(lot, "loteId"));
-		m.put("lotNumber", lot.hasNonNull("descricaoNumero") ? "Lote " + lot.get("descricaoNumero").asText() : null);
-		m.put("lotType", text(lot, "status"));
-		m.put("vehicleDescription", text(lot, "descricao"));
-		m.put("currentBidValue", lance);
+		String lotNumber = lot.hasNonNull("descricaoNumero") ? "Lote " + lot.get("descricaoNumero").asText() : null;
 		// Sem campo de piso explicito; o lance atual alimenta o piso (o sink mantem o menor ja visto).
-		m.put("minimumBidValue", lance);
-		m.put("closingDate", brDate(text(lot, "dataEncerramento")));
-		m.put("lotStatus", text(lot, "status"));
-		return m;
+		return new LotFeedResponse(auctionId, text(lot, "loteId"), lotNumber, text(lot, "status"),
+				text(lot, "descricao"), null, toStr(lance), toStr(lance), brDate(text(lot, "dataEncerramento")),
+				text(lot, "status"), null);
+	}
+
+	/** Valor monetario como texto (a fonte do feed e declarada como STRING; o sink converte). */
+	private static String toStr(Long value) {
+		return value == null ? null : Long.toString(value);
 	}
 
 	private boolean isOrgao(JsonNode lot) {

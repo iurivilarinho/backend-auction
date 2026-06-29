@@ -41,7 +41,7 @@ public class IntegrationRunController {
 	@Operation(summary = "Resumo das execucoes por status", description = "Retorna a contagem de execucoes agrupadas por status.")
 	@ApiResponse(responseCode = "200", description = "Resumo retornado com sucesso")
 	@GetMapping("/runs/summary")
-	public ResponseEntity<java.util.Map<String, Long>> runSummary() {
+	public ResponseEntity<IntegrationRunSummaryResponse> runSummary() {
 		return ResponseEntity.ok(service.runSummary());
 	}
 

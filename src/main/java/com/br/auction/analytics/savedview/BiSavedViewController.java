@@ -14,9 +14,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.br.auction.analytics.savedview.BiSavedViewDtos.SavedViewRequest;
-import com.br.auction.analytics.savedview.BiSavedViewDtos.SavedViewResponse;
-
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -37,57 +34,57 @@ public class BiSavedViewController {
 
     @Operation(summary = "Lista as visoes salvas")
     @GetMapping
-    public List<SavedViewResponse> list() {
-        return service.list().stream().map(SavedViewResponse::of).toList();
+    public ResponseEntity<List<SavedViewResponse>> list() {
+        return ResponseEntity.ok(service.list().stream().map(SavedViewResponse::new).toList());
     }
 
     @Operation(summary = "Carrega uma visao salva")
     @GetMapping("/{id}")
-    public SavedViewResponse get(@PathVariable Long id) {
-        return SavedViewResponse.of(service.get(id));
+    public ResponseEntity<SavedViewResponse> get(@PathVariable Long id) {
+        return ResponseEntity.ok(new SavedViewResponse(service.get(id)));
     }
 
     @Operation(summary = "Cria uma visao salva")
     @ApiResponse(responseCode = "201", description = "Visao criada")
     @PostMapping
     public ResponseEntity<SavedViewResponse> create(@Valid @RequestBody SavedViewRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(SavedViewResponse.of(service.create(request)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(new SavedViewResponse(service.create(request)));
     }
 
     @Operation(summary = "Atualiza uma visao salva")
     @PutMapping("/{id}")
-    public SavedViewResponse update(@PathVariable Long id, @Valid @RequestBody SavedViewRequest request) {
-        return SavedViewResponse.of(service.update(id, request));
+    public ResponseEntity<SavedViewResponse> update(@PathVariable Long id, @Valid @RequestBody SavedViewRequest request) {
+        return ResponseEntity.ok(new SavedViewResponse(service.update(id, request)));
     }
 
     @Operation(summary = "Define a visao como padrao")
     @PutMapping("/{id}/default")
-    public SavedViewResponse setDefault(@PathVariable Long id) {
-        return SavedViewResponse.of(service.setDefault(id));
+    public ResponseEntity<SavedViewResponse> setDefault(@PathVariable Long id) {
+        return ResponseEntity.ok(new SavedViewResponse(service.setDefault(id)));
     }
 
     @Operation(summary = "Alterna o favorito de uma visao")
     @PutMapping("/{id}/favorite")
-    public SavedViewResponse toggleFavorite(@PathVariable Long id) {
-        return SavedViewResponse.of(service.toggleFavorite(id));
+    public ResponseEntity<SavedViewResponse> toggleFavorite(@PathVariable Long id) {
+        return ResponseEntity.ok(new SavedViewResponse(service.toggleFavorite(id)));
     }
 
     @Operation(summary = "Arquiva uma visao (move para a aba Arquivadas)")
     @PutMapping("/{id}/archive")
-    public SavedViewResponse archive(@PathVariable Long id) {
-        return SavedViewResponse.of(service.setArchived(id, true));
+    public ResponseEntity<SavedViewResponse> archive(@PathVariable Long id) {
+        return ResponseEntity.ok(new SavedViewResponse(service.setArchived(id, true)));
     }
 
     @Operation(summary = "Restaura uma visao arquivada")
     @PutMapping("/{id}/unarchive")
-    public SavedViewResponse unarchive(@PathVariable Long id) {
-        return SavedViewResponse.of(service.setArchived(id, false));
+    public ResponseEntity<SavedViewResponse> unarchive(@PathVariable Long id) {
+        return ResponseEntity.ok(new SavedViewResponse(service.setArchived(id, false)));
     }
 
     @Operation(summary = "Duplica uma visao")
     @PostMapping("/{id}/duplicate")
     public ResponseEntity<SavedViewResponse> duplicate(@PathVariable Long id) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(SavedViewResponse.of(service.duplicate(id)));
+        return ResponseEntity.status(HttpStatus.CREATED).body(new SavedViewResponse(service.duplicate(id)));
     }
 
     @Operation(summary = "Remove uma visao salva")

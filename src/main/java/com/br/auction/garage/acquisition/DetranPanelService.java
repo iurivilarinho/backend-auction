@@ -50,9 +50,6 @@ public class DetranPanelService {
 	private static final Logger LOG = LoggerFactory.getLogger(DetranPanelService.class);
 	private static final String PANEL_CREDENTIAL_CODE = "DETRAN_MG_PANEL";
 
-	public record SyncResult(boolean success, String message, int documentsAdded) {
-	}
-
 	/** Documento (PDF) baixado do painel. */
 	public record PanelDoc(DocumentType type, String fileName, String contentType, byte[] bytes) {
 	}

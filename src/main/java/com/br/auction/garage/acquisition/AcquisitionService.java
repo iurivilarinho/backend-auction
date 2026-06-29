@@ -6,6 +6,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.br.auction.garage.enums.AcquisitionStatus;
 import com.br.auction.garage.enums.DocumentType;
 import com.br.auction.garage.enums.ExpenseStatus;
+import com.br.auction.garage.enums.ExpenseType;
 import com.br.auction.garage.models.Acquisition;
 import com.br.auction.garage.models.AcquisitionDocument;
 import com.br.auction.garage.models.AcquisitionExpense;
@@ -34,6 +36,7 @@ import com.br.auction.garage.repository.AcquisitionExpenseRepository;
 import com.br.auction.garage.repository.AcquisitionRepository;
 import com.br.auction.models.AuctionItem;
 import com.br.auction.repository.AuctionItemRepository;
+import com.br.auction.response.EnumOptionResponse;
 
 import jakarta.persistence.EntityNotFoundException;
 
@@ -201,22 +204,22 @@ public class AcquisitionService {
 	 * e guardando-os no banco. Casa a aquisicao com o arremate do painel pela referencia do lote.
 	 */
 	@Transactional
-	public DetranPanelService.SyncResult syncDocuments(Long acquisitionId) {
+	public DocumentSyncResultResponse syncDocuments(Long acquisitionId) {
 		Acquisition acquisition = findById(acquisitionId);
 		DetranPanelService.PanelResult result = detranPanelService.fetchArremates(true);
 		if (!result.success()) {
-			return new DetranPanelService.SyncResult(false, result.message(), 0);
+			return new DocumentSyncResultResponse(false, result.message(), 0);
 		}
 		DetranPanelService.PanelArremate match = matchArremate(acquisition, result.arremates());
 		if (match == null) {
-			return new DetranPanelService.SyncResult(false,
+			return new DocumentSyncResultResponse(false,
 					"Nao encontrei este veiculo entre os seus arremates no painel.", 0);
 		}
 		int added = attachPanelDocuments(acquisition, match);
 		if (added > 0) {
 			repository.save(acquisition);
 		}
-		return new DetranPanelService.SyncResult(true,
+		return new DocumentSyncResultResponse(true,
 				added > 0 ? added + " documento(s) sincronizado(s) do painel."
 						: "Documentos ja estavam sincronizados.",
 				added);
@@ -575,6 +578,19 @@ public class AcquisitionService {
 
 	public AcquisitionDashboardResponse dashboard() {
 		return new AcquisitionDashboardResponse(findAll());
+	}
+
+	/** Opcoes (status, tipos de gasto, tipos de documento) para os formularios da garagem. */
+	public AcquisitionOptionsResponse options() {
+		return new AcquisitionOptionsResponse(
+				toOptions(AcquisitionStatus.values(), AcquisitionStatus::getDescription),
+				toOptions(ExpenseType.values(), ExpenseType::getDescription),
+				toOptions(DocumentType.values(), DocumentType::getDescription));
+	}
+
+	private <T extends Enum<T>> List<EnumOptionResponse> toOptions(T[] values,
+			java.util.function.Function<T, String> label) {
+		return Arrays.stream(values).map(value -> new EnumOptionResponse(value.name(), label.apply(value))).toList();
 	}
 
 	private AcquisitionExpense resolveExpense(Acquisition acquisition, Long expenseId) {

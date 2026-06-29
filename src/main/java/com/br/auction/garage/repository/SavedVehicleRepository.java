@@ -1,4 +1,5 @@
 package com.br.auction.garage.repository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -7,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import com.br.auction.garage.models.SavedVehicle;
 
+@Repository
 public interface SavedVehicleRepository extends JpaRepository<SavedVehicle, Long> {
 
 	List<SavedVehicle> findAllByOrderByCreatedAtDesc();

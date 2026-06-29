@@ -1,4 +1,5 @@
 package com.br.auction.repository;
+import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
@@ -10,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import com.br.auction.models.AuctionItem;
 
+@Repository
 public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>, JpaSpecificationExecutor<AuctionItem> {
 
 	boolean existsByLotId(String lotId);

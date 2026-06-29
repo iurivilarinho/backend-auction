@@ -78,12 +78,13 @@ public class IntegrationRunService {
 		return runRepository.findAllByOrderByStartedAtDesc(pageable).map(IntegrationRunResponse::new);
 	}
 
-	public java.util.Map<String, Long> runSummary() {
-		java.util.Map<String, Long> summary = new java.util.LinkedHashMap<>();
-		for (RunStatus runStatus : RunStatus.values()) {
-			summary.put(runStatus.name(), runRepository.countByStatus(runStatus));
-		}
-		return summary;
+	public IntegrationRunSummaryResponse runSummary() {
+		return new IntegrationRunSummaryResponse(
+				runRepository.countByStatus(RunStatus.RUNNING),
+				runRepository.countByStatus(RunStatus.SUCCESS),
+				runRepository.countByStatus(RunStatus.PARTIAL),
+				runRepository.countByStatus(RunStatus.FAILED),
+				runRepository.countByStatus(RunStatus.CANCELLED));
 	}
 
 	@Transactional(readOnly = true)

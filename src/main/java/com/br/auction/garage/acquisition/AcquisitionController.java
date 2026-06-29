@@ -1,9 +1,7 @@
 package com.br.auction.garage.acquisition;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -20,9 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.br.auction.garage.enums.AcquisitionStatus;
 import com.br.auction.garage.enums.DocumentType;
-import com.br.auction.garage.enums.ExpenseType;
 import com.br.auction.garage.models.Acquisition;
 import com.br.auction.garage.models.AcquisitionDocument;
 
@@ -56,12 +52,8 @@ public class AcquisitionController {
 
 	@Operation(summary = "Opcoes (status, tipos de gasto, tipos de documento)")
 	@GetMapping("/options")
-	public ResponseEntity<Map<String, Object>> options() {
-		Map<String, Object> options = Map.of(
-				"statuses", labels(AcquisitionStatus.values(), AcquisitionStatus::name, AcquisitionStatus::getDescription),
-				"expenseTypes", labels(ExpenseType.values(), ExpenseType::name, ExpenseType::getDescription),
-				"documentTypes", labels(DocumentType.values(), DocumentType::name, DocumentType::getDescription));
-		return ResponseEntity.ok(options);
+	public ResponseEntity<AcquisitionOptionsResponse> options() {
+		return ResponseEntity.ok(service.options());
 	}
 
 	@Operation(summary = "Buscar veiculo adquirido por ID")
@@ -141,7 +133,7 @@ public class AcquisitionController {
 
 	@Operation(summary = "Sincronizar documentos do painel do provedor (best-effort)")
 	@PostMapping("/{id}/documents/sync")
-	public ResponseEntity<DetranPanelService.SyncResult> syncDocuments(@PathVariable Long id) {
+	public ResponseEntity<DocumentSyncResultResponse> syncDocuments(@PathVariable Long id) {
 		return ResponseEntity.ok(service.syncDocuments(id));
 	}
 
@@ -165,12 +157,4 @@ public class AcquisitionController {
 				.body(document.getBytes());
 	}
 
-	private <T> List<Map<String, String>> labels(T[] values, java.util.function.Function<T, String> name,
-			java.util.function.Function<T, String> label) {
-		List<Map<String, String>> result = new ArrayList<>();
-		for (T value : values) {
-			result.add(Map.of("value", name.apply(value), "label", label.apply(value)));
-		}
-		return result;
-	}
 }

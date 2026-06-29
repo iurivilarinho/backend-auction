@@ -6,7 +6,8 @@ import org.springframework.web.servlet.ModelAndView;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Component
@@ -15,7 +16,7 @@ public class LoggingInterceptor implements HandlerInterceptor {
 	// ───────── Config ─────────
 	private static final String START_TIME = "lg_start";
 	private static final String REQ_ID = "lg_reqid";
-	private static final SimpleDateFormat DF = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss.SSS");
+	private static final DateTimeFormatter DF = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss.SSS");
 
 	// ANSI colors (desliga com ANSI_OFF se seu console não suportar)
 	private static final String RESET = "\u001B[0m";
@@ -104,7 +105,7 @@ public class LoggingInterceptor implements HandlerInterceptor {
 		System.err.println(SEP);
 
 		// Bloco leve de contexto
-		String when = DF.format(new Date());
+		String when = DF.format(LocalDateTime.now());
 		String ip = Optional.ofNullable(request.getHeader("X-Forwarded-For")).map(s -> s.split(",")[0].trim())
 				.orElseGet(() -> request.getRemoteAddr());
 		String ua = truncate(request.getHeader("User-Agent"), 80);
@@ -155,7 +156,7 @@ public class LoggingInterceptor implements HandlerInterceptor {
 		if (took >= 0) {
 			System.out.println("┃ " + FG_CYAN + "⏱  Duração:     " + RESET + took + " ms");
 		}
-		System.out.println("┃ " + FG_CYAN + "📅 Fim:         " + RESET + DF.format(new Date()));
+		System.out.println("┃ " + FG_CYAN + "📅 Fim:         " + RESET + DF.format(LocalDateTime.now()));
 
 		if (ex != null) {
 			String msg = truncate(ex.getMessage(), 160);
