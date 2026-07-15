@@ -1,8 +1,5 @@
 package com.br.auction.service;
 
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -16,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.br.auction.enums.AuctionProvider;
+import com.br.auction.util.BrDateTime;
 import com.br.auction.response.AuctionListJsonResponse;
 import com.br.auction.response.LotFeedPageResponse;
 import com.br.auction.response.LotFeedResponse;
@@ -41,8 +39,6 @@ public class LeiloService {
 
 	private static final Logger LOG = LoggerFactory.getLogger(LeiloService.class);
 	private static final ObjectMapper MAPPER = new ObjectMapper();
-	private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-	private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
 	/** Tipos considerados veiculo na Leilo. */
 	private static final Set<String> VEHICLE_TYPES = Set.of("carros", "motos", "pesados", "utilitarios", "veiculos");
@@ -216,16 +212,9 @@ public class LeiloService {
 				.timeout(timeoutMs);
 	}
 
-	/** Converte ISO-8601 em UTC (ex.: 2026-06-29T11:30:00.000Z) para "dd/MM/yyyy HH:mm" no fuso de SP. */
+	/** Converte a data do provedor (varios formatos ISO/BR) para "dd/MM/yyyy HH:mm" no fuso de SP. */
 	private static String brDate(String iso) {
-		if (iso == null || iso.isBlank()) {
-			return null;
-		}
-		try {
-			return Instant.parse(iso).atZone(SP).format(BR);
-		} catch (RuntimeException ex) {
-			return null;
-		}
+		return BrDateTime.toBr(iso);
 	}
 
 	private static String text(JsonNode node, String field) {

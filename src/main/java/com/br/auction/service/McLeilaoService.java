@@ -1,9 +1,6 @@
 package com.br.auction.service;
 
 import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -16,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.br.auction.enums.AuctionProvider;
+import com.br.auction.util.BrDateTime;
 import com.br.auction.response.AuctionListJsonResponse;
 import com.br.auction.response.LotFeedResponse;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -39,8 +37,6 @@ public class McLeilaoService {
 
 	private static final Logger LOG = LoggerFactory.getLogger(McLeilaoService.class);
 	private static final ObjectMapper MAPPER = new ObjectMapper();
-	private static final DateTimeFormatter BR = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-	private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 	private static final List<String> STATUSES = List.of("ANDAMENTO", "SUSPENSO", "LOTEAMENTO", "ENCERRADO");
 	private static final List<String> ORGAO_KEYWORDS = List.of("detran", "prf", "policia", "polícia", "receita",
 			"prefeitura", "municipio", "município", "governo", "estado do", "comarca", "tribunal", "justica", "justiça",
@@ -176,20 +172,9 @@ public class McLeilaoService {
 				.timeout(timeoutMs);
 	}
 
-	/** ISO com offset (ex.: 2026-02-12T17:00:00.000+0000) -> "dd/MM/yyyy HH:mm" no fuso de SP. */
+	/** Converte a data do provedor (varios formatos ISO/BR) para "dd/MM/yyyy HH:mm" no fuso de SP. */
 	private static String brDate(String iso) {
-		if (iso == null || iso.isBlank()) {
-			return null;
-		}
-		try {
-			return OffsetDateTime.parse(iso, DateTimeFormatter.ISO_OFFSET_DATE_TIME).atZoneSameInstant(SP).format(BR);
-		} catch (RuntimeException ex) {
-			try {
-				return OffsetDateTime.parse(iso).atZoneSameInstant(SP).format(BR);
-			} catch (RuntimeException ex2) {
-				return null;
-			}
-		}
+		return BrDateTime.toBr(iso);
 	}
 
 	private static String text(JsonNode node, String field) {

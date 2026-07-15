@@ -4,6 +4,8 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +15,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.br.auction.enums.LotType;
 import com.br.auction.enums.PriceStatGroupBy;
 import com.br.auction.filter.AuctionFilter;
 import com.br.auction.filter.AuctionItemFacetFilter;
@@ -25,6 +28,7 @@ import com.br.auction.repository.AuctionRepository;
 import com.br.auction.response.AuctionItemFacetsResponse;
 import com.br.auction.response.AuctionItemResponse;
 import com.br.auction.response.AuctionListResponse;
+import com.br.auction.response.FipeEnrichStatusResponse;
 import com.br.auction.response.PriceStatResponse;
 
 import com.br.auction.specification.AuctionItemSpecification;
@@ -45,6 +49,12 @@ public class AuctionService {
 	private final DistanceService distanceService;
 	private final GeocodingService geocodingService;
 	private final EntityManager entityManager;
+
+	/**
+	 * Situacao das buscas FIPE em segundo plano, por leilao. Fica no servidor (nao no navegador), entao
+	 * sobrevive a um F5 do front: a tela consulta {@code /fipe/status} e continua mostrando o progresso.
+	 */
+	private final Map<Long, FipeJobState> fipeJobs = new ConcurrentHashMap<>();
 
 	public AuctionService(AuctionRepository auctionRepository, AuctionItemRepository auctionItemRepository,
 			FipeService fipeService, EditalService editalService, DistanceService distanceService,
@@ -189,30 +199,86 @@ public class AuctionService {
 	}
 
 	/**
+	 * Marca o leilao como "em processamento" e dispara a busca FIPE assincrona. Se ja houver uma
+	 * rodada em andamento para o mesmo leilao, nao inicia outra (evita processamento duplicado).
+	 *
+	 * @return {@code true} se iniciou uma nova rodada; {@code false} se ja havia uma em andamento.
+	 */
+	public boolean startAuctionFipeEnrichment(Long auctionId) {
+		FipeJobState[] created = new FipeJobState[1];
+		fipeJobs.compute(auctionId, (id, current) -> {
+			if (current != null && current.running) {
+				// ja existe rodada em andamento; mantem a atual e nao dispara outra
+				return current;
+			}
+			FipeJobState fresh = new FipeJobState();
+			fresh.running = true; // reserva a vaga sincronamente (evita disparo duplicado em corrida)
+			created[0] = fresh;
+			return fresh;
+		});
+		if (created[0] == null) {
+			return false;
+		}
+		enrichAuctionItemsFipeAsync(auctionId);
+		return true;
+	}
+
+	/** Situacao atual da busca FIPE de um leilao (para a tela reidratar o progresso apos um F5). */
+	public FipeEnrichStatusResponse auctionFipeStatus(Long auctionId) {
+		FipeJobState state = fipeJobs.get(auctionId);
+		if (state == null) {
+			return new FipeEnrichStatusResponse(false, 0, 0, 0, null);
+		}
+		String message = state.running
+				? "Busca FIPE em andamento (" + state.processed.get() + "/" + state.total + ")."
+				: "Busca FIPE concluida: " + state.enriched.get() + " item(ns) atualizado(s).";
+		return new FipeEnrichStatusResponse(state.running, state.total, state.processed.get(), state.enriched.get(),
+				message);
+	}
+
+	/**
 	 * Enriquece em segundo plano o FIPE dos itens de um leilao que ainda nao tem valor, respeitando
 	 * o cache. Roda assincrono para nao bloquear a requisicao; cada chamada externa e tolerante a falha.
+	 * O progresso fica registrado em {@link #fipeJobs} para a tela poder consultar apos um refresh.
 	 */
 	@Async
 	@Transactional
 	public void enrichAuctionItemsFipeAsync(Long auctionId) {
-		List<AuctionItem> items = auctionItemRepository.findByAuctionId(auctionId);
+		FipeJobState state = fipeJobs.computeIfAbsent(auctionId, id -> new FipeJobState());
+		state.running = true;
 		int enriched = 0;
-		for (AuctionItem item : items) {
-			if (item.getFipeValue() != null && item.getFipeValue().compareTo(BigDecimal.ZERO) > 0) {
-				continue;
-			}
-			try {
-				BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription());
-				if (fipeValue != null && fipeValue.compareTo(BigDecimal.ZERO) > 0) {
-					item.setFipeValue(fipeValue);
-					auctionItemRepository.save(item);
-					enriched++;
+		try {
+			List<AuctionItem> items = auctionItemRepository.findByAuctionId(auctionId);
+			state.total = items.size();
+			for (AuctionItem item : items) {
+				state.processed.incrementAndGet();
+				if (item.getFipeValue() != null && item.getFipeValue().compareTo(BigDecimal.ZERO) > 0) {
+					continue;
 				}
-			} catch (RuntimeException ex) {
-				LOG.debug("Falha ao buscar FIPE do item {}: {}", item.getId(), ex.getMessage());
+				try {
+					BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription());
+					if (fipeValue != null && fipeValue.compareTo(BigDecimal.ZERO) > 0) {
+						item.setFipeValue(fipeValue);
+						auctionItemRepository.save(item);
+						enriched++;
+						state.enriched.incrementAndGet();
+					}
+				} catch (RuntimeException ex) {
+					LOG.debug("Falha ao buscar FIPE do item {}: {}", item.getId(), ex.getMessage());
+				}
 			}
+			LOG.info("FIPE enriquecido para {} itens do leilao {}.", enriched, auctionId);
+		} finally {
+			state.running = false;
 		}
-		LOG.info("FIPE enriquecido para {} itens do leilao {}.", enriched, auctionId);
+	}
+
+	/** Estado (em memoria, no servidor) de uma rodada de busca FIPE de um leilao. */
+	private static final class FipeJobState {
+		private volatile boolean running;
+		private volatile int total;
+		private final AtomicInteger processed = new AtomicInteger();
+		private final AtomicInteger enriched = new AtomicInteger();
 	}
 
 	/**
@@ -224,7 +290,10 @@ public class AuctionService {
 	public List<PriceStatResponse> priceStats(PriceStatFilter filter) {
 		// providerCode/stateCode opcionais (ausentes = todos). Aceita varios provedores (multi-selecao).
 		PriceStatGroupBy groupBy = filter.getGroupBy();
+		// Preco medio ignora sucata (distorce a media); mantem conservados e itens sem classificacao
+		// (ex.: MC, que nao rotula o lote) para nao zerar a estatistica desses provedores.
 		List<AuctionItem> items = auctionItemRepository.findAll(AuctionItemSpecification.closedEquals(true)
+				.and(AuctionItemSpecification.typeNotIn(List.of(LotType.SUCATA)))
 				.and(AuctionItemSpecification.brandIn(filter.getBrand()))
 				.and(AuctionItemSpecification.providerCodeIn(filter.getProviderCode()))
 				.and(AuctionItemSpecification.stateCodeEquals(filter.getStateCode())));

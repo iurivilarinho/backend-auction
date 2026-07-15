@@ -32,6 +32,16 @@ public class AuctionItemSpecification {
 				.in(status.stream().map(LotType::getDescription).toList());
 	}
 
+	/** Exclui os tipos informados (ex.: SUCATA), mantendo conservados e itens sem classificacao. */
+	public static Specification<AuctionItem> typeNotIn(List<LotType> types) {
+		if (types == null || types.isEmpty()) {
+			return Specification.unrestricted();
+		}
+		List<String> descriptions = types.stream().map(LotType::getDescription).toList();
+		return (root, query, criteriaBuilder) -> criteriaBuilder.or(criteriaBuilder.isNull(root.get("lotType")),
+				root.get("lotType").in(descriptions).not());
+	}
+
 	public static Specification<AuctionItem> closedEquals(Boolean closed) {
 		if (closed == null) {
 			return Specification.unrestricted();

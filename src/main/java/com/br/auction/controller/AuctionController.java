@@ -25,6 +25,7 @@ import com.br.auction.response.AuctionListJsonResponse;
 import com.br.auction.response.AuctionListResponse;
 import com.br.auction.response.AuctionResponse;
 import com.br.auction.response.FipeEnrichStartedResponse;
+import com.br.auction.response.FipeEnrichStatusResponse;
 import com.br.auction.response.HealthResponse;
 import com.br.auction.response.IntegrationTriggerResponse;
 import com.br.auction.response.ProviderResponse;
@@ -155,9 +156,17 @@ public class AuctionController {
 	@ApiResponse(responseCode = "202", description = "Enriquecimento iniciado")
 	@PostMapping("/auctions/{auctionId}/items/fipe")
 	public ResponseEntity<FipeEnrichStartedResponse> enrichAuctionFipe(@PathVariable Long auctionId) {
-		auctionService.enrichAuctionItemsFipeAsync(auctionId);
-		return ResponseEntity.accepted().body(new FipeEnrichStartedResponse(true,
-				"Busca FIPE iniciada em segundo plano. Os valores aparecerao em instantes."));
+		boolean started = auctionService.startAuctionFipeEnrichment(auctionId);
+		String message = started ? "Busca FIPE iniciada em segundo plano. Os valores aparecerao em instantes."
+				: "Ja existe uma busca FIPE em andamento para este leilao.";
+		return ResponseEntity.accepted().body(new FipeEnrichStartedResponse(started, message));
+	}
+
+	@Operation(summary = "Situacao da busca FIPE de um leilao", description = "Retorna se a busca FIPE em segundo plano ainda esta em andamento e o progresso, permitindo a tela reidratar apos um refresh.")
+	@ApiResponse(responseCode = "200", description = "Situacao retornada com sucesso")
+	@GetMapping("/auctions/{auctionId}/items/fipe/status")
+	public ResponseEntity<FipeEnrichStatusResponse> auctionFipeStatus(@PathVariable Long auctionId) {
+		return ResponseEntity.ok(auctionService.auctionFipeStatus(auctionId));
 	}
 
 	@Operation(summary = "Precos medios de arremate", description = "Estatisticas (media, minimo, maximo, quantidade) do valor de arremate sobre veiculos com lances ENCERRADOS, agrupadas por marca / marca+modelo / marca+modelo+ano.")
