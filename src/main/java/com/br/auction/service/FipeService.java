@@ -58,11 +58,26 @@ public class FipeService {
 	}
 
 	public BigDecimal getFipeValue(String vehicleDescription) {
+		return getFipeValue(vehicleDescription, null);
+	}
+
+	/**
+	 * Igual ao {@link #getFipeValue(String)}, mas aceita um ano de reserva vindo de um campo proprio do
+	 * item (ex.: {@code vehicleYear}). Provedores como o LEILO nao colocam o ano na descricao, entao o
+	 * parser devolvia ano nulo e o casamento FIPE falhava sempre (a FIPE exige o ano). Com o fallback,
+	 * o ano do item entra quando a descricao nao traz um.
+	 */
+	public BigDecimal getFipeValue(String vehicleDescription, String fallbackYear) {
 
 		VehicleInfo vehicle = parser.parse(vehicleDescription);
 
 		if (vehicle.getBrand() == null || vehicle.getModel() == null) {
 			return BigDecimal.ZERO;
+		}
+
+		if ((vehicle.getYear() == null || vehicle.getYear().isBlank()) && fallbackYear != null
+				&& !fallbackYear.isBlank()) {
+			vehicle.setYear(fallbackYear.trim());
 		}
 
 		Optional<VehicleFipeCache> cacheOpt = cacheRepository.findByBrandAndModelAndYear(vehicle.getBrand(),
@@ -115,6 +130,10 @@ public class FipeService {
 		String brandNorm = normalize(vehicle.getBrand());
 		List<String> modelTokens = tokenize(vehicle.getModel());
 		String year = vehicle.getYear() == null ? null : vehicle.getYear().replaceAll("\\D", "");
+		if (year != null && year.length() > 4) {
+			// ex.: "2012/2013" -> "20122013" -> mantem so o ano-modelo (primeiros 4 digitos)
+			year = year.substring(0, 4);
+		}
 
 		for (String type : FIPE_TYPES) {
 

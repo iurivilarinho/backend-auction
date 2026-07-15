@@ -193,7 +193,7 @@ public class AuctionService {
 	public AuctionItem enrichItemFipe(Long itemId) {
 		AuctionItem item = auctionItemRepository.findById(itemId)
 				.orElseThrow(() -> new EntityNotFoundException("Item nao encontrado para ID: " + itemId));
-		BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription());
+		BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription(), item.getVehicleYear());
 		item.setFipeValue(fipeValue);
 		return auctionItemRepository.save(item);
 	}
@@ -256,7 +256,7 @@ public class AuctionService {
 					continue;
 				}
 				try {
-					BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription());
+					BigDecimal fipeValue = fipeService.getFipeValue(item.getVehicleDescription(), item.getVehicleYear());
 					if (fipeValue != null && fipeValue.compareTo(BigDecimal.ZERO) > 0) {
 						item.setFipeValue(fipeValue);
 						auctionItemRepository.save(item);

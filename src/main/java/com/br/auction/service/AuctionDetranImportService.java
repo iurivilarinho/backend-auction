@@ -146,7 +146,7 @@ public class AuctionDetranImportService {
 			imageStorageService.replaceImages(item, lot.getImageUrls());
 
 			if (fipeImportEnabled && item.getVehicleDescription() != null && !item.getVehicleDescription().isBlank()) {
-				item.setFipeValue(fipeService.getFipeValue(item.getVehicleDescription()));
+				item.setFipeValue(fipeService.getFipeValue(item.getVehicleDescription(), item.getVehicleYear()));
 			}
 
 			auctionItemRepository.save(item);
