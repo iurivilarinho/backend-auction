@@ -70,6 +70,10 @@ public class AuctionItem {
 	private BigDecimal fipeValue;
 
 	@Column
+	@Schema(description = "Ultima vez que o backfill agendado tentou buscar a FIPE deste item (evita re-tentar sem parar os que nao existem na tabela FIPE). Nulo = nunca tentado pelo backfill.")
+	private java.time.LocalDateTime fipeCheckedAt;
+
+	@Column
 	@Schema(description = "Data/hora de encerramento DO LOTE (cada lote encerra em horario proprio; coletada do provedor por lote)")
 	private java.time.LocalDateTime lotClosingDate;
 
@@ -189,6 +193,14 @@ public class AuctionItem {
 
 	public void setFipeValue(BigDecimal fipeValue) {
 		this.fipeValue = fipeValue;
+	}
+
+	public java.time.LocalDateTime getFipeCheckedAt() {
+		return fipeCheckedAt;
+	}
+
+	public void setFipeCheckedAt(java.time.LocalDateTime fipeCheckedAt) {
+		this.fipeCheckedAt = fipeCheckedAt;
 	}
 
 	public Boolean getImagesSynced() {

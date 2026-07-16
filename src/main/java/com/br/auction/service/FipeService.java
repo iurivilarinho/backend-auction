@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import com.br.auction.models.VehicleFipeCache;
@@ -33,24 +34,31 @@ public class FipeService {
 	private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 			+ "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0 Safari/537.36";
 
+	private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(FipeService.class);
+
 	private final VehicleParserService parser;
 	private final VehicleFipeCacheRepository cacheRepository;
 	private final RestTemplate restTemplate = new RestTemplate();
 	private final String baseUrlTemplate;
 	private final String token;
+	private final long rateLimitBackoffMs;
+	// Momento ate o qual devemos evitar chamar a FIPE (setado quando a API responde 429).
+	private volatile LocalDateTime rateLimitedUntil;
 	// Cache em memoria das marcas por tipo: evita repetir a chamada de marcas a cada consulta
 	// (reduz o numero de requisicoes a fonte FIPE).
 	private final Map<String, Map[]> brandsByType = new ConcurrentHashMap<>();
 
 	public FipeService(VehicleParserService parser, VehicleFipeCacheRepository cacheRepository,
 			@Value("${fipe.api.base-url:https://parallelum.com.br/fipe/api/v2}") String baseUrlTemplate,
-			@Value("${fipe.api.token:}") String token) {
+			@Value("${fipe.api.token:}") String token,
+			@Value("${fipe.rate-limit.backoff-ms:3600000}") long rateLimitBackoffMs) {
 		this.parser = parser;
 		this.cacheRepository = cacheRepository;
 		this.baseUrlTemplate = baseUrlTemplate.endsWith("/")
 				? baseUrlTemplate.substring(0, baseUrlTemplate.length() - 1)
 				: baseUrlTemplate;
 		this.token = token;
+		this.rateLimitBackoffMs = rateLimitBackoffMs;
 		this.restTemplate.getInterceptors().add((request, body, execution) -> {
 			request.getHeaders().add(HttpHeaders.USER_AGENT, USER_AGENT);
 			// A FIPE (FipeOnline/parallelum) espera o token de assinatura no header, nao em query param.
@@ -131,6 +139,11 @@ public class FipeService {
 
 	private BigDecimal queryFipe(VehicleInfo vehicle) {
 
+		if (isRateLimited()) {
+			// Em janela de backoff apos um 429: nao adianta chamar, poupa a cota diaria.
+			return BigDecimal.ZERO;
+		}
+
 		String brandNorm = normalize(vehicle.getBrand());
 		List<String> modelTokens = tokenize(vehicle.getModel());
 		String year = vehicle.getYear() == null ? null : vehicle.getYear().replaceAll("\\D", "");
@@ -178,15 +191,26 @@ public class FipeService {
 					return new BigDecimal(price);
 				}
 
+			} catch (HttpClientErrorException.TooManyRequests ex) {
+				// 429: API publica limitou. Entra em backoff e para de tentar (todos os tipos limitariam).
+				brandsByType.remove(type);
+				this.rateLimitedUntil = LocalDateTime.now().plusNanos(rateLimitBackoffMs * 1_000_000L);
+				LOG.warn("FIPE 429 (limite de taxa). Pausando consultas por {} ms.", rateLimitBackoffMs);
+				return BigDecimal.ZERO;
 			} catch (Exception ex) {
 				brandsByType.remove(type);
-				org.slf4j.LoggerFactory.getLogger(FipeService.class)
-						.warn("FIPE tipo={} marca={} modelo={} ano={} falhou: {}", type, vehicle.getBrand(),
-								vehicle.getModel(), vehicle.getYear(), ex.toString());
+				LOG.warn("FIPE tipo={} marca={} modelo={} ano={} falhou: {}", type, vehicle.getBrand(),
+						vehicle.getModel(), vehicle.getYear(), ex.toString());
 			}
 		}
 
 		return BigDecimal.ZERO;
+	}
+
+	/** Indica se estamos numa janela de backoff apos um 429 da API FIPE (usado pelo backfill agendado). */
+	public boolean isRateLimited() {
+		LocalDateTime until = this.rateLimitedUntil;
+		return until != null && until.isAfter(LocalDateTime.now());
 	}
 
 	/** Marca: escolhe o codigo cujo nome normalizado tem maior sobreposicao com a marca informada. */

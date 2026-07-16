@@ -33,6 +33,21 @@ public interface AuctionItemRepository extends JpaRepository<AuctionItem, Long>,
 
 	List<AuctionItem> findByBrandIsNullAndVehicleDescriptionIsNotNull();
 
+	/**
+	 * Itens candidatos ao backfill agendado de FIPE: sem valor FIPE, com descricao, e que ainda nao
+	 * foram tentados (ou cujo ultima tentativa e mais antiga que o corte). Paginado para processar em
+	 * lotes pequenos e respeitar o limite da API publica.
+	 */
+	@Query("""
+			SELECT i FROM AuctionItem i
+			WHERE (i.fipeValue IS NULL OR i.fipeValue <= 0)
+			AND i.vehicleDescription IS NOT NULL AND i.vehicleDescription <> ''
+			AND (i.fipeCheckedAt IS NULL OR i.fipeCheckedAt < :cutoff)
+			ORDER BY i.fipeCheckedAt ASC NULLS FIRST, i.id ASC
+			""")
+	List<AuctionItem> findFipeBackfillCandidates(@Param("cutoff") java.time.LocalDateTime cutoff,
+			org.springframework.data.domain.Pageable pageable);
+
 	@Query("""
 			SELECT DISTINCT i.brand FROM AuctionItem i
 			WHERE i.brand IS NOT NULL AND i.brand <> ''
