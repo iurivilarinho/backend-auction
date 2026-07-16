@@ -53,6 +53,10 @@ public class FipeService {
 		this.token = token;
 		this.restTemplate.getInterceptors().add((request, body, execution) -> {
 			request.getHeaders().add(HttpHeaders.USER_AGENT, USER_AGENT);
+			// A FIPE (FipeOnline/parallelum) espera o token de assinatura no header, nao em query param.
+			if (this.token != null && !this.token.isBlank()) {
+				request.getHeaders().add("X-Subscription-Token", this.token);
+			}
 			return execution.execute(request, body);
 		});
 	}
@@ -242,12 +246,12 @@ public class FipeService {
 				.toList();
 	}
 
-	/** Anexa o token configurado (quando houver) para fontes FIPE que exigem autenticacao. */
+	/**
+	 * Mantido por compatibilidade das chamadas; o token de assinatura agora vai no header
+	 * {@code X-Subscription-Token} (adicionado pelo interceptor), nao mais em query param.
+	 */
 	private String withToken(String url) {
-		if (token == null || token.isBlank()) {
-			return url;
-		}
-		return url + (url.contains("?") ? "&" : "?") + "token=" + token;
+		return url;
 	}
 
 	/** Ano: escolhe o codigo do ano que contem os 4 digitos do ano informado. */
